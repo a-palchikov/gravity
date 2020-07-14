@@ -24,8 +24,29 @@ github.com/Masterminds/goutils
 github.com/Masterminds/semver
 # github.com/Masterminds/sprig v2.22.0+incompatible
 github.com/Masterminds/sprig
-# github.com/Microsoft/go-winio v0.4.11 => github.com/Microsoft/go-winio v0.4.9
+# github.com/Microsoft/go-winio v0.4.15-0.20190919025122-fc70bd9a86b5 => github.com/Microsoft/go-winio v0.4.14
 github.com/Microsoft/go-winio
+github.com/Microsoft/go-winio/pkg/guid
+github.com/Microsoft/go-winio/vhd
+# github.com/Microsoft/hcsshim v0.8.9
+github.com/Microsoft/hcsshim
+github.com/Microsoft/hcsshim/internal/cow
+github.com/Microsoft/hcsshim/internal/hcs
+github.com/Microsoft/hcsshim/internal/hcserror
+github.com/Microsoft/hcsshim/internal/hns
+github.com/Microsoft/hcsshim/internal/interop
+github.com/Microsoft/hcsshim/internal/log
+github.com/Microsoft/hcsshim/internal/logfields
+github.com/Microsoft/hcsshim/internal/longpath
+github.com/Microsoft/hcsshim/internal/mergemaps
+github.com/Microsoft/hcsshim/internal/oc
+github.com/Microsoft/hcsshim/internal/safefile
+github.com/Microsoft/hcsshim/internal/schema1
+github.com/Microsoft/hcsshim/internal/schema2
+github.com/Microsoft/hcsshim/internal/timeout
+github.com/Microsoft/hcsshim/internal/vmcompute
+github.com/Microsoft/hcsshim/internal/wclayer
+github.com/Microsoft/hcsshim/osversion
 # github.com/PuerkitoBio/purell v1.1.1 => github.com/PuerkitoBio/purell v1.1.0
 github.com/PuerkitoBio/purell
 # github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
@@ -123,7 +144,22 @@ github.com/cloudfoundry/gosigar
 github.com/cloudfoundry/gosigar/sys/windows
 # github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd
 github.com/codahale/hdrhistogram
-# github.com/containerd/continuity v0.0.0-20200107194136-26c1120b8d41
+# github.com/containerd/cgroups v0.0.0-20200625214700-544d8ea40afe
+github.com/containerd/cgroups/stats/v1
+# github.com/containerd/console v1.0.0
+github.com/containerd/console
+# github.com/containerd/containerd v1.4.0-0 => github.com/containerd/containerd v1.3.1-0.20200512144102-f13ba8f2f2fd
+github.com/containerd/containerd/api/services/content/v1
+github.com/containerd/containerd/content
+github.com/containerd/containerd/content/local
+github.com/containerd/containerd/content/proxy
+github.com/containerd/containerd/errdefs
+github.com/containerd/containerd/filters
+github.com/containerd/containerd/log
+github.com/containerd/containerd/platforms
+github.com/containerd/containerd/services/content/contentserver
+github.com/containerd/containerd/sys
+# github.com/containerd/continuity v0.0.0-20200413184840-d3ef23f19fbb
 github.com/containerd/continuity/fs
 github.com/containerd/continuity/pathdriver
 github.com/containerd/continuity/syscallx
@@ -377,7 +413,7 @@ github.com/gophercloud/gophercloud/openstack/utils
 github.com/gophercloud/gophercloud/pagination
 # github.com/gorilla/handlers v0.0.0-20151124211609-e96366d97736
 github.com/gorilla/handlers
-# github.com/gorilla/mux v1.7.1 => github.com/gorilla/mux v1.7.0
+# github.com/gorilla/mux v1.7.2 => github.com/gorilla/mux v1.7.0
 github.com/gorilla/mux
 # github.com/gravitational/configure v0.0.0-20191213111049-fce91dea0d0d
 github.com/gravitational/configure
@@ -496,6 +532,8 @@ github.com/gravitational/vfsgen
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 github.com/gregjones/httpcache
 github.com/gregjones/httpcache/diskcache
+# github.com/grpc-ecosystem/grpc-opentracing v0.0.0-20180507213350-8e809c8a8645
+github.com/grpc-ecosystem/grpc-opentracing/go/otgrpc
 # github.com/hashicorp/errwrap v1.0.0
 github.com/hashicorp/errwrap
 # github.com/hashicorp/go-immutable-radix v1.1.0
@@ -573,7 +611,7 @@ github.com/maruel/panicparse/stack
 github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.9 => github.com/mattn/go-isatty v0.0.3
 github.com/mattn/go-isatty
-# github.com/mattn/go-runewidth v0.0.4 => github.com/mattn/go-runewidth v0.0.2-0.20161012013512-737072b4e32b
+# github.com/mattn/go-runewidth v0.0.9 => github.com/mattn/go-runewidth v0.0.2-0.20161012013512-737072b4e32b
 github.com/mattn/go-runewidth
 # github.com/mattn/go-sqlite3 v1.13.0
 github.com/mattn/go-sqlite3
@@ -676,7 +714,7 @@ github.com/satori/go.uuid
 github.com/sean-/seed
 # github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
 github.com/shurcooL/httpfs/vfsutil
-# github.com/shurcooL/sanitized_anchor_name v0.0.0-20170918181015-86672fcb3f95
+# github.com/shurcooL/sanitized_anchor_name v1.0.0
 github.com/shurcooL/sanitized_anchor_name
 # github.com/sirupsen/logrus v1.6.0 => github.com/gravitational/logrus v1.4.3
 github.com/sirupsen/logrus
