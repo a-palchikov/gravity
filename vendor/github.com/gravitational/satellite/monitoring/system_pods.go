@@ -22,26 +22,47 @@ import (
 
 	"github.com/gravitational/satellite/agent/health"
 	pb "github.com/gravitational/satellite/agent/proto/agentpb"
+<<<<<<< HEAD
+=======
+	"github.com/gravitational/satellite/lib/kubernetes"
+>>>>>>> a9af0108... try and update magnet to 0.2.1
 	"github.com/gravitational/satellite/utils"
 
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+<<<<<<< HEAD
+=======
+	"k8s.io/apimachinery/pkg/fields"
+>>>>>>> a9af0108... try and update magnet to 0.2.1
 )
 
 // SystemPodsConfig specifies configuration for a system pods checker.
 type SystemPodsConfig struct {
+<<<<<<< HEAD
 	// KubeConfig specifies kubernetes access configuration.
 	*KubeConfig
 	// Namespaces specifies the list of namespaces to query for critical pods.
 	Namespaces []string
+=======
+	// NodeName specifies the kubernetes name of this node.
+	NodeName string
+	// KubeConfig specifies kubernetes access configuration.
+	*KubeConfig
+>>>>>>> a9af0108... try and update magnet to 0.2.1
 }
 
 // checkAndSetDefaults validates that this configuration is correct and sets
 // value defaults where necessary.
 func (r *SystemPodsConfig) checkAndSetDefaults() error {
 	var errors []error
+<<<<<<< HEAD
+=======
+	if r.NodeName == "" {
+		errors = append(errors, trace.BadParameter("node name must be provided"))
+	}
+>>>>>>> a9af0108... try and update magnet to 0.2.1
 	if r.KubeConfig == nil {
 		errors = append(errors, trace.BadParameter("kubernetes access config must be provided"))
 	}
@@ -99,6 +120,7 @@ func (r *systemPodsChecker) check(ctx context.Context, reporter health.Reporter)
 
 // getPods returns a list of the local pods that have the
 // `gravitational.io/critical-pod` label.
+<<<<<<< HEAD
 func (r *systemPodsChecker) getPods() (pods []corev1.Pod, err error) {
 	opts := metav1.ListOptions{
 		LabelSelector: systemPodsSelector.String(),
@@ -113,6 +135,19 @@ func (r *systemPodsChecker) getPods() (pods []corev1.Pod, err error) {
 	}
 
 	return pods, nil
+=======
+func (r *systemPodsChecker) getPods() ([]corev1.Pod, error) {
+	opts := metav1.ListOptions{
+		LabelSelector: systemPodsSelector.String(),
+		FieldSelector: fields.OneTermEqualSelector("spec.nodeName", r.NodeName).String(),
+	}
+	pods, err := r.Client.CoreV1().Pods(kubernetes.AllNamespaces).List(opts)
+	if err != nil {
+		return nil, utils.ConvertError(err)
+	}
+
+	return pods.Items, nil
+>>>>>>> a9af0108... try and update magnet to 0.2.1
 }
 
 // verifyPods verifies the pods are in a valid state. Reports a failed probe for

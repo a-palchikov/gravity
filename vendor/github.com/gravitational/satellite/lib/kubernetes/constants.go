@@ -16,7 +16,12 @@ limitations under the License.
 
 package kubernetes
 
+<<<<<<< HEAD
 const (
 	// AllNamespaces can be used to query pods in all namespaces.
 	AllNamespaces = ""
 )
+=======
+// AllNamespaces can be used to query pods in all namespaces.
+const AllNamespaces = ""
+>>>>>>> a9af0108... try and update magnet to 0.2.1
