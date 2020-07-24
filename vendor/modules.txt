@@ -399,6 +399,11 @@ github.com/gravitational/kingpin
 github.com/gravitational/license
 github.com/gravitational/license/authority
 github.com/gravitational/license/constants
+# github.com/gravitational/magnet v0.2.2
+github.com/gravitational/magnet
+github.com/gravitational/magnet/common
+github.com/gravitational/magnet/pkg/cp
+github.com/gravitational/magnet/pkg/progressui
 # github.com/gravitational/oxy v0.0.0-20180629203109-e4a7e35311e6
 github.com/gravitational/oxy/connlimit
 github.com/gravitational/oxy/forward
