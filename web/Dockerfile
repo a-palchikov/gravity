@@ -2,6 +2,9 @@
 
 FROM node:12.18.3-stretch-slim
 
+# TODO(dima)
+# RUN --mount=type=cache,sharing=locked,id=aptlib,target=/var/lib/apt \
+#    --mount=type=cache,sharing=locked,id=aptcache,target=/var/cache/apt \
 RUN apt-get update && apt-get install git -y
 
 # prepare to install only package.json dependencies
