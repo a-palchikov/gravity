@@ -7,6 +7,8 @@ FROM node:12.18.3-stretch-slim
 #    --mount=type=cache,sharing=locked,id=aptcache,target=/var/cache/apt \
 RUN apt-get update && apt-get install git -y
 
+# TODO(dima): is this needed?
+# RUN --mount=type=cache,sharing=locked,id=npm,target=/.cache/npm npm i npm@6.4.1 -g
 # prepare to install only package.json dependencies
 RUN mkdir -p /app
 COPY package*.json /app/
