@@ -189,7 +189,7 @@ replace (
 	github.com/julienschmidt/httprouter => github.com/julienschmidt/httprouter v1.1.0
 	github.com/kr/pty => github.com/kr/pty v1.0.0
 	github.com/kylelemons/godebug => github.com/kylelemons/godebug v0.0.0-20160406211939-eadb3ce320cb
-	github.com/magefile/mage => github.com/knisbet/mage v1.9.1-0.20200719045837-eabe8cda6d46
+	github.com/magefile/mage => github.com/a-palchikov/mage v1.9.1-0.20210412170651-36d88cd4245d
 	github.com/mattn/go-isatty => github.com/mattn/go-isatty v0.0.3
 	github.com/mattn/go-runewidth => github.com/mattn/go-runewidth v0.0.2-0.20161012013512-737072b4e32b
 	github.com/miekg/dns => github.com/miekg/dns v1.0.4

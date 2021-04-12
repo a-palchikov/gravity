@@ -484,37 +484,6 @@ func (Package) Web() (err error) {
 
 	webImage := fmt.Sprint("telekube-oss-web:", pkgWebAssets.version)
 	contextPath := "web/"
-	if enterprise != "" {
-		webImage = fmt.Sprint("telekube-enterprise-web:", pkgWebAssets.version)
-		contextPath = "e/web/"
-
-		err = os.RemoveAll("e/web/oss-src")
-		if err != nil && !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-		err = os.RemoveAll("e/web/shared")
-		if err != nil && !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-		err = os.MkdirAll("e/web/oss-src", 0700)
-		if err != nil && !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-		err = os.MkdirAll("e/web/shared", 0700)
-		if err != nil && !trace.IsNotFound(err) {
-			return trace.Wrap(err)
-		}
-
-		_, err = m.Exec().Run(context.TODO(), "cp", "-R", "web/src/.", "e/web/oss-src/")
-		if err != nil {
-			return trace.Wrap(err)
-		}
-
-		_, err = m.Exec().Run(context.TODO(), "cp", "-R", "web/shared/.", "e/web/shared/")
-		if err != nil {
-			return trace.Wrap(err)
-		}
-	}
 
 	err = m.DockerBuild().AddTag(webImage).Build(context.TODO(), contextPath)
 	if err != nil {

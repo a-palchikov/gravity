@@ -64,6 +64,8 @@ github.com/Shopify/toxiproxy v2.1.4+incompatible/go.mod h1:OXgGpZ6Cli1/URJOF1DMx
 github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=
 github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f/go.mod h1:3eOhrUMpNV+6aFIbp5/iudMxNCF27Vw2OZgy4xEx0Fg=
 github.com/VividCortex/ewma v1.1.1/go.mod h1:2Tkkvm3sRDVXaiyucHiACn4cqf7DpdyLvmxzcbUokwA=
+github.com/a-palchikov/mage v1.9.1-0.20210412170651-36d88cd4245d h1:FYsai43TUks4ZCLmy7UBlnw6fogs1pDsy+iSzmW/VYY=
+github.com/a-palchikov/mage v1.9.1-0.20210412170651-36d88cd4245d/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/a-palchikov/satellite v0.0.9-0.20210412150653-ee686a40b0ac h1:ppCyPi+2VgGvJlMU/ivyT5siu0CVcMAgl8u1Sk4T/zQ=
 github.com/a-palchikov/satellite v0.0.9-0.20210412150653-ee686a40b0ac/go.mod h1:Px/m+LrZP6jS/oXdhFYyZaZZUFPgWZ39bveXSD20L64=
 github.com/a8m/mark v0.1.1-0.20170507133748-44f2db618845/go.mod h1:c8Mh99Cw82nrsAnPgxQSZHkswVOJF7/MqZb1ZdvriLM=
@@ -574,8 +576,6 @@ github.com/klauspost/compress v1.4.0/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0
 github.com/klauspost/compress v1.4.1/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0guNDohfE1A=
 github.com/klauspost/cpuid v0.0.0-20180405133222-e7e905edc00e/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
-github.com/knisbet/mage v1.9.1-0.20200719045837-eabe8cda6d46 h1:wLzKtayO/EGDtIsdP1m3ZLACMHXLzLVr4+fNpkq/7ns=
-github.com/knisbet/mage v1.9.1-0.20200719045837-eabe8cda6d46/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/knz/strtime v0.0.0-20181018220328-af2256ee352c/go.mod h1:4ZxfWkxwtc7dBeifERVVWRy9F9rTU9p0yCDgeCtlius=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
