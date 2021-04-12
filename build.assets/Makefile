@@ -17,6 +17,8 @@ DOCKER_ARGS ?= --pull
 NOROOT=-u $$(id -u):$$(id -g)
 BBOX = gravity-buildbox:latest
 
+DOCKER ?= DOCKER_BUILDKIT=1 PROGRESS_NO_TRUNC=1 docker
+
 GRAVITY_WEB_APP_DIR ?= $(abspath $(LOCALDIR)/../web)/
 
 # Git versions (refspecs) for build targets
@@ -127,17 +129,23 @@ endif
 #
 .PHONY: test
 test: buildbox test-etcd
-	DOCKER_BUILDKIT=1 PROGRESS_NO_TRUNC=1 docker run --net=host --rm=true $(NOROOT) \
+	$(DOCKER) run --net=host --rm=true $(NOROOT) \
 		-v $(TOP):$(SRCDIR) \
 		-e "GRAVITY_PKG_PATH=$(GRAVITY_PKG_PATH)" \
 		-e "TEST_PACKAGES=$(TEST_PACKAGES)" \
 		-t $(BBOX) \
-		dumb-init make -C $(SRCDIR)/build.assets FLAGS='-cover -race' TEST_ETCD=true TEST_K8S=$(TEST_K8S) test-inside-container
+		# See https://golang.org/doc/go1.14#compiler
+		# and https://github.com/etcd-io/bbolt/issues/187 for details on checkptr=0
+		# TODO(dmitri): update bbolt (fix merged in https://github.com/etcd-io/bbolt/pull/201)
+		dumb-init make -C $(SRCDIR)/build.assets FLAGS='-cover -race -gcflags=all=-d=checkptr=0' TEST_ETCD=true TEST_K8S=$(TEST_K8S) test-inside-container
 
 
 .PHONY: test-inside-container
 test-inside-container:
-	TEST_ETCD=$(TEST_ETCD) TEST_ETCD_CONFIG=$(TEST_ETCD_CONFIG) TEST_K8S=$(TEST_K8S) go test $(TEST_PACKAGES) $(FLAGS)
+	TEST_ETCD=$(TEST_ETCD) \
+	  TEST_ETCD_CONFIG=$(TEST_ETCD_CONFIG) \
+	  TEST_K8S=$(TEST_K8S) \
+		  go test $(TEST_PACKAGES) $(FLAGS)
 # TODO: It turns out "go vet" never really worked because we used incorrect package path
 # and now that I've fixed it, it produces a gazillion of warnings. So I'm commenting this
 # out for the time being, should uncomment once we've fixed the warnings.
@@ -198,7 +206,7 @@ endif
 grpc: buildbox $(GRPC_PROTO_OUTPUTS)
 
 $(GRPC_PROTO_OUTPUTS): $(GRPC_PROTOS)
-	docker run --rm=true $(NOROOT) \
+	$(DOCKER) run --rm=true $(NOROOT) \
 		   -v $(TOP):$(SRCDIR) \
 		   $(BBOX) \
 		   dumb-init make -C $(subst $(TOP),$(SRCDIR),$(@D))
@@ -212,7 +220,7 @@ validate-deps: buildbox
 	$(eval TMP := $(shell mktemp -d))
 	$(eval REPOFILES := $(addprefix $(TOP),lib tool Makefile version.sh build.assets vendor .git .gitignore Gopkg.lock Gopkg.toml))
 	cp -r $(REPOFILES) $(TMP)
-	docker run --rm=true \
+	$(DOCKER) run --rm=true \
 		   -v $(GITHUB_SSH_KEY):/root/.ssh/id_rsa \
 		   -v $(TMP):$(SRCDIR) \
 		   $(BBOX) \
@@ -223,7 +231,7 @@ validate-deps: buildbox
 #
 .PHONY: build-in-container
 build-in-container: buildbox
-	docker run --rm=true $(NOROOT) \
+	$(DOCKER) run --rm=true $(NOROOT) \
 		   -v $(TOP):$(SRCDIR) \
 		   -e "LOCAL_BUILDDIR=$(LOCAL_BUILDDIR)" \
 		   -e "LOCAL_GRAVITY_BUILDDIR=$(LOCAL_GRAVITY_BUILDDIR)" \
@@ -449,7 +457,7 @@ build-tsh:
 #
 .PHONY: build-tsh-in-container
 build-tsh-in-container: clone-teleport
-	docker run --rm=true $(NOROOT) \
+	$(DOCKER) run --rm=true $(NOROOT) \
            -v $(TOP):$(SRCDIR) \
 		   -v $(TELEPORT_SRCDIR)/teleport:$(TELEPORT_SRCDIR_CONTAINER) \
 		   -e "GRAVITY_PKG_PATH=$(GRAVITY_PKG_PATH)" \
@@ -563,7 +571,7 @@ build-fio:
 
 .PHONY: build-fio-sub
 build-fio-sub: clone-fio
-	docker run --rm=true $(NOROOT) \
+	$(DOCKER) run --rm=true $(NOROOT) \
 	    -v $(TOP):$(SRCDIR) \
 	    -v $(FIO_BUILDDIR):/fio \
 	    $(BBOX) \
@@ -656,7 +664,7 @@ push-storage-app: $(STORAGE_APP_OUT)
 #
 .PHONY: enter
 enter:
-	docker run -ti --rm=true $(BBOX) /bin/bash
+	$(DOCKER) run -ti --rm=true $(BBOX) /bin/bash
 
 .PHONY: selinux-policy-package
 selinux-policy-package: $(SELINUX_OUT)

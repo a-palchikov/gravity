@@ -26,7 +26,7 @@ K8S_VER := 1.19.8
 K8S_VER_SUFFIX := $(shell printf "%d%02d%02d" $(shell echo $(K8S_VER) | sed "s/\./ /g"))
 GOLFLAGS ?= -w -s
 
-GOLANG_VER ?= 1.13.12-stretch
+GOLANG_VER ?= 1.16.2-buster
 ETCD_VER := v2.3.7
 # Version of the version tool
 VERSION_TAG := 0.0.2

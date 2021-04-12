@@ -253,12 +253,6 @@ var (
 		Default: "https://get.gravitational.io",
 		Short:   "Address of OpsCenter used to publish gravity enterprise artifacts to",
 	})
-
-	// Enterprise builds
-	enterprise = magnet.E(magnet.EnvVar{
-		Key:   "ENTERPRISE",
-		Short: "Set to enable enterprise builds",
-	})
 )
 
 func k8sVersionToPlanetFormat(s string) string {

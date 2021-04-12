@@ -41,13 +41,6 @@ func (Build) Go() (err error) {
 	defer func() { m.Complete(err) }()
 
 	packages := []string{"github.com/gravitational/gravity/tool/gravity", "github.com/gravitational/gravity/tool/tele"}
-	if enterprise != "" {
-		if err = hasE(); err != nil {
-			return trace.Wrap(err)
-		}
-
-		packages = []string{"github.com/gravitational/gravity/e/tool/gravity", "github.com/gravitational/gravity/e/tool/tele"}
-	}
 
 	err = m.GolangBuild().
 		SetGOOS("linux").
@@ -84,7 +77,7 @@ func (Build) Darwin() (err error) {
 	return trace.Wrap(err)
 }
 
-// BuildContainer creates a docker container as a consistent golang environment to use for software builds.
+// BuildContainer creates a docker container as a consistent Go environment to use for software builds.
 func (Build) BuildContainer() (err error) {
 	m := root.Target("build:buildContainer")
 	defer func() { m.Complete(err) }()
