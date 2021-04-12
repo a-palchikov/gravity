@@ -38,7 +38,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 )
@@ -121,11 +120,7 @@ func (c *nethealthChecker) Check(ctx context.Context, reporter health.Reporter) 
 }
 
 func (c *nethealthChecker) check(ctx context.Context, reporter health.Reporter) error {
-	addr, err := c.getNethealthAddr()
-	if trace.IsNotFound(err) {
-		log.WithError(err).Warn("Nethealth pod was not found.")
-		return nil // pod was not found, log and treat gracefully
-	}
+	peers, err := c.getPeers()
 	if err != nil {
 		log.Debugf("Failed to discover nethealth peers: %v.", err)
 		return nil
@@ -159,12 +154,12 @@ func (c *nethealthChecker) check(ctx context.Context, reporter health.Reporter) 
 func (c *nethealthChecker) getPeers() (peers []string, err error) {
 	opts := metav1.ListOptions{
 		LabelSelector: nethealthLabelSelector.String(),
+		FieldSelector: fields.OneTermNotEqualSelector("spec.nodeName", c.NodeName).String(),
 	}
 	pods, err := c.Client.CoreV1().Pods(nethealthNamespace).List(opts)
 	if err != nil {
 		return peers, utils.ConvertError(err)
 	}
-
 	for _, pod := range pods.Items {
 		peers = append(peers, pod.Spec.NodeName)
 	}
@@ -309,6 +304,7 @@ func (c *nethealthChecker) fetchNethealthMetrics(ctx context.Context) (res []byt
 			},
 		},
 	}
+
 	// The two relevant metrics exposed by nethealth are 'nethealth_echo_request_total' and
 	// 'nethealth_echo_timeout_total'. We expect a pair of request/timeout metrics per peer.
 	// Example metrics received from nethealth may look something like the output below:
@@ -326,11 +322,16 @@ func (c *nethealthChecker) fetchNethealthMetrics(ctx context.Context) (res []byt
 		return nil, trace.Wrap(err)
 	}
 
+	req.Close = true
+
 	resp, err := client.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
 		buffer, err := ioutil.ReadAll(resp.Body)

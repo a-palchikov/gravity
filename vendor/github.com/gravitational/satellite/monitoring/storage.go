@@ -70,29 +70,6 @@ func (c *StorageConfig) CheckAndSetDefaults() error {
 	return trace.NewAggregate(errors...)
 }
 
-// CheckAndSetDefaults validates that this configuration is correct and sets
-// value defaults where necessary.
-func (c *StorageConfig) CheckAndSetDefaults() error {
-	var errors []error
-	if c.Path == "" {
-		errors = append(errors, trace.BadParameter("volume path must be provided"))
-	}
-
-	if c.LowWatermark > 100 {
-		errors = append(errors, trace.BadParameter("low watermark must be 0-100"))
-	}
-
-	if c.HighWatermark > 100 {
-		errors = append(errors, trace.BadParameter("high watermark must be 0-100"))
-	}
-
-	if c.LowWatermark > c.HighWatermark {
-		c.LowWatermark = c.HighWatermark
-	}
-
-	return trace.NewAggregate(errors...)
-}
-
 // HighWatermarkCheckerData is attached to high watermark check results
 type HighWatermarkCheckerData struct {
 	// LowWatermark is the low watermark percentage value
