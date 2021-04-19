@@ -124,7 +124,7 @@ func (Build) BuildContainer() (err error) {
 		SetBuildArg("GOLANGCI_VER", golangciVersion).
 		SetBuildArg("UID", fmt.Sprint(os.Getuid())).
 		SetBuildArg("GID", fmt.Sprint(os.Getgid())).
-		SetDockerfile("build.assets/Dockerfile").
+		SetDockerfile("build.assets/Dockerfile.buildx").
 		Build(context.TODO(), "./build.assets")
 
 	return trace.Wrap(err)
