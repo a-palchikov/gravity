@@ -18,6 +18,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"log/syslog"
 	"net"
@@ -56,7 +57,7 @@ func NewRegistry(config *configuration.Configuration) (*Registry, error) {
 	}, nil
 }
 
-// Starts starts the registry server and returns when the server
+// Start starts the registry server and returns when the server
 // has actually started listening.
 func (r *Registry) Start() error {
 	listener, err := listener.NewListener(r.config.HTTP.Net, r.config.HTTP.Addr)
@@ -83,6 +84,11 @@ func (r *Registry) listenAndServe(listener net.Listener) error {
 
 // Addr returns the address this registry listens on.
 func (r *Registry) Addr() string {
+	switch addr := r.addr.(type) {
+	case *net.TCPAddr:
+		// FIXME(dima): avoid hardcoding 0.0.0.0
+		return fmt.Sprintf("0.0.0.0:%d", addr.Port)
+	}
 	return r.addr.String()
 }
 

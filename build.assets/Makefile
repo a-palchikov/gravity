@@ -671,13 +671,17 @@ selinux-policy-package: $(SELINUX_OUT)
 
 .PHONY: selinux
 selinux: $(SELINUX_ASSETS)
+	$(MAKE) -C $(TOP)/lib/system/selinux
 
 .PHONY: push-selinux
 push-selinux: $(SELINUX_OUT)
 	$(AWS) s3 cp $(S3_OPTS) $(SELINUX_OUT) $(BUILD_BUCKET_URL)/selinux/centos/$(SELINUX_VERSION)
 
-$(SELINUX_ASSETS): $(SELINUX_OUT)
+$(SELINUX_ASSETS): $(SELINUX_OUT) | $(SELINUX_ASSETSDIR)
 	tar xf $^ -C $(@D) $(@F)
+
+$(SELINUX_ASSETSDIR):
+	mkdir -p $@
 
 $(SELINUX_OUT): | $(GRAVITY_BUILDDIR)
 	if ! $(AWS) s3 cp $(S3_OPTS) $(BUILD_BUCKET_URL)/selinux/centos/$(SELINUX_VERSION) $@; then \

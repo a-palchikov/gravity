@@ -93,10 +93,8 @@ var (
 
 	planetBranch = magnet.E(magnet.EnvVar{
 		Key:     "PLANET_BRANCH",
-		Default: "dmitri/darwin",
-		//Default: planetTag,
-		//Default: planetVersion,
-		Short: "Alternate branch to build planet",
+		Default: planetTag,
+		Short:   "Alternate branch to build planet",
 	})
 	planetVersion = magnet.E(magnet.EnvVar{
 		Key:     "PLANET_TAG",

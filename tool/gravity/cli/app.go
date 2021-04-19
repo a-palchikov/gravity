@@ -182,7 +182,9 @@ func importApp(env *localenv.LocalEnvironment, registryURL, dockerURL, source st
 	}
 
 	if req.Vendor {
-		dockerClient, err := docker.NewClient(dockerURL)
+		// FIXME(dima): make docker client setup more robust, dockerURL must be optional
+		// dockerClient, err := docker.NewClient(dockerURL)
+		dockerClient, err := docker.NewClientFromEnv()
 		if err != nil {
 			return trace.Wrap(err)
 		}
