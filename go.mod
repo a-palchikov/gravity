@@ -1,6 +1,6 @@
 module github.com/gravitational/gravity
 
-go 1.15
+go 1.16
 
 require (
 	cloud.google.com/go v0.38.0
@@ -66,7 +66,6 @@ require (
 	github.com/gravitational/trace v1.1.15
 	github.com/gravitational/ttlmap v0.0.0-20171116003245-91fd36b9004c
 	github.com/gravitational/version v0.0.2-0.20170324200323-95d33ece5ce1
-	github.com/gravitational/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/grpc-ecosystem/grpc-gateway v1.9.0 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/jonboulle/clockwork v0.2.0
@@ -115,7 +114,6 @@ require (
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	github.com/xtgo/set v1.0.0
 	github.com/ziutek/mymysql v1.5.4 // indirect
-	go.etcd.io/bbolt v1.3.5 // indirect
 	go.uber.org/atomic v1.4.0 // indirect
 	go.uber.org/multierr v1.1.0 // indirect
 	go.uber.org/zap v1.10.0 // indirect
@@ -176,6 +174,7 @@ replace (
 	github.com/google/uuid => github.com/google/uuid v1.1.0
 	github.com/gophercloud/gophercloud => github.com/gophercloud/gophercloud v0.0.0-20181207171349-d3bcea3cf97e
 	github.com/gorilla/mux => github.com/gorilla/mux v1.7.0
+	github.com/gravitational/magnet => github.com/a-palchikov/magnet v0.2.7-0.20210415185637-2bdfc7e7ff38
 	github.com/gravitational/satellite => github.com/a-palchikov/satellite v0.0.9-0.20210412150653-ee686a40b0ac
 	github.com/hashicorp/go-cleanhttp => github.com/hashicorp/go-cleanhttp v0.5.0
 	github.com/hashicorp/go-uuid => github.com/hashicorp/go-uuid v1.0.0

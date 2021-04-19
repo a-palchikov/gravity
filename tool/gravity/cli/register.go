@@ -361,7 +361,7 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	g.AppImportCmd.Name = g.AppImportCmd.Flag("name", "optional app name, overrides the one specified in the app manifest").String()
 	g.AppImportCmd.Version = g.AppImportCmd.Flag("version", "optional app version, overrides the one specified in the app manifest").String()
 	g.AppImportCmd.RegistryURL = g.AppImportCmd.Flag("registry-url", "optional remote docker registry URL").Default(defaults.DockerRegistry).String()
-	g.AppImportCmd.DockerURL = g.AppImportCmd.Flag("docker-url", "optional docker URL").Default(constants.DockerEngineURL).String()
+	g.AppImportCmd.DockerURL = g.AppImportCmd.Flag("docker-url", "optional docker URL").String()
 	g.AppImportCmd.OpsCenterURL = g.AppImportCmd.Flag("ops-url", "optional Gravity Hub URL").String()
 	g.AppImportCmd.Vendor = g.AppImportCmd.Flag("vendor", "rewrite all container images to use private docker registry (requires --registry-url)").Bool()
 	g.AppImportCmd.Force = g.AppImportCmd.Flag("force", "overwrite existing application").Bool()
@@ -777,6 +777,10 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	g.SystemGCRegistryCmd.CmdClause = systemGCCmd.Command("registry", "Prune unused docker images on this node.")
 	g.SystemGCRegistryCmd.Confirm = g.SystemGCRegistryCmd.Flag("confirm", "Confirm to remove unrelated docker").Bool()
 	g.SystemGCRegistryCmd.DryRun = g.SystemGCRegistryCmd.Flag("dry-run", "Only list docker images to remove w/o removing them").Bool()
+
+	g.SystemRegistryCmd.CmdClause = g.SystemCmd.Command("registry", "Run local docker registry instance")
+	g.SystemRegistryCmd.RootDir = g.SystemRegistryCmd.Arg("rootdir", "Directory to store images").String()
+	g.SystemRegistryCmd.Addr = g.SystemRegistryCmd.Flag("addr", "Optionally set listen address").String()
 
 	// operations on planet (planet plugin)
 	g.PlanetCmd.CmdClause = g.Command("planet", "operations with planet").Hidden()

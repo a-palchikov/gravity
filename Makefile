@@ -48,7 +48,7 @@ TELEPORT_TAG = 3.2.17
 # TELEPORT_REPOTAG adapts TELEPORT_TAG to the teleport tagging scheme
 TELEPORT_REPOTAG := v$(TELEPORT_TAG)
 PLANET_TAG := 7.1.25-$(K8S_VER_SUFFIX)
-PLANET_BRANCH := $(PLANET_TAG)
+PLANET_BRANCH := dmitri/darwin
 K8S_APP_TAG := $(GRAVITY_TAG)
 TELEKUBE_APP_TAG := $(GRAVITY_TAG)
 WORMHOLE_APP_TAG := $(GRAVITY_TAG)
@@ -634,7 +634,7 @@ $(GRAVITY_BUILDDIR):
 
 .PHONY: $(BINARIES)
 $(BINARIES): selinux grpc
-	GO111MODULE=on go install -mod=vendor -ldflags $(GRAVITY_LINKFLAGS) -tags "$(GRAVITY_BUILDTAGS)" $(GRAVITY_PKG_PATH)/tool/$@
+	go install -mod=vendor -ldflags $(GRAVITY_LINKFLAGS) -tags "$(GRAVITY_BUILDTAGS)" $(GRAVITY_PKG_PATH)/tool/$@
 
 .PHONY: dev
 dev: goinstall

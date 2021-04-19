@@ -27,6 +27,7 @@ func (Test) Lint() (err error) {
 	m.Printlnf("Running golangci-lint")
 
 	wd, _ := os.Getwd()
+	cacheDir, _ := root.Config.AbsCacheDir()
 
 	err = m.DockerRun().
 		SetRemove(true).
@@ -39,7 +40,7 @@ func (Test) Lint() (err error) {
 			Consistency: "cached",
 		}).
 		AddVolume(magnet.DockerBindMount{
-			Source:      magnet.AbsCacheDir(),
+			Source:      cacheDir,
 			Destination: "/cache",
 			Consistency: "cached",
 		}).

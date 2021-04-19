@@ -310,6 +310,10 @@ type Application struct {
 	SystemGCPackageCmd SystemGCPackageCmd
 	// SystemGCRegistryCmd removes unused docker images
 	SystemGCRegistryCmd SystemGCRegistryCmd
+
+	// SystemRegistryCmd runs a copy of the docker distribution service
+	SystemRegistryCmd SystemRegistryCmd
+
 	// GarbageCollectCmd prunes unused resources (package/journal files/docker images)
 	// in the cluster
 	GarbageCollectCmd GarbageCollectCmd
@@ -1779,6 +1783,16 @@ type SystemGCRegistryCmd struct {
 	// DryRun displays the images to be removed
 	// without actually removing anything
 	DryRun *bool
+}
+
+// SystemRegistryCmd runs a copy of the docker distribution service
+// at the configured location
+type SystemRegistryCmd struct {
+	*kingpin.CmdClause
+	// RootDir specifies the location for images
+	RootDir *string
+	// Addr optionally specifies the address to listen on
+	Addr *string
 }
 
 // GarbageCollectCmd prunes unused cluster resources

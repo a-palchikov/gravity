@@ -272,6 +272,8 @@ func (v *vendorer) VendorDir(ctx context.Context, unpackedDir string, req Vendor
 		return trace.Wrap(err)
 	}
 
+	// TODO(dima): is this guaranteed that all registry layers are available?
+	// Maybe fallthrough and attempt to export layers in any case?
 	if ok, _ := utils.IsDirectory(filepath.Join(unpackedDir, defaults.RegistryDir)); ok {
 		log.Debug("Registry layers are present.")
 		return nil
@@ -289,13 +291,38 @@ func (v *vendorer) VendorDir(ctx context.Context, unpackedDir string, req Vendor
 		images[i] = v.imageService.Unwrap(image)
 	}
 
-	log.Infof("No registry layers found, will pull and export images %q.", images)
-	if err = v.pullAndExportImages(ctx, teleutils.Deduplicate(images), unpackedDir, req.Parallel, req.ProgressReporter); err != nil {
+	config := docker.BasicConfiguration("0.0.0.0:0", filepath.Join(unpackedDir, defaults.RegistryDir))
+	registry, err := docker.NewRegistry(config)
+	if err != nil {
 		return trace.Wrap(err)
 	}
+	errC := make(chan error, 1)
+	go func() {
+		errC <- registry.Start()
+	}()
+	if err := <-errC; err != nil {
+		return trace.Wrap(err, "failed to start docker registry")
+	}
+	defer registry.Close()
+	log.Info("Registry active at ", registry.Addr())
 
-	if err = v.pullAndExportImages(ctx, teleutils.Deduplicate(chartImages), unpackedDir, req.Parallel, req.ProgressReporter); err != nil {
-		return trace.Wrap(err)
+	layerExporter, err := newLayerExporterAtAddr(
+		unpackedDir, registry.Addr(), v.dockerClient,
+		log.WithField("export-directory", unpackedDir),
+		req.ProgressReporter)
+	if err != nil {
+		return trace.Wrap(err, "failed to create layer export")
+	}
+
+	images = teleutils.Deduplicate(images)
+	log.Infof("No registry layers found, will pull and export images %q.", images)
+	if err = v.pullAndExportImages(ctx, layerExporter, images, unpackedDir, req.Parallel); err != nil {
+		return trace.Wrap(err, "failed to export docker images: %q", images)
+	}
+
+	chartImages = teleutils.Deduplicate(chartImages)
+	if err = v.pullAndExportImages(ctx, layerExporter, chartImages, unpackedDir, req.Parallel); err != nil {
+		return trace.Wrap(err, "failed to export docker images from charts: %q", chartImages)
 	}
 
 	return nil
@@ -379,7 +406,7 @@ func printResourceStatus(resourceFile resources.ResourceFile, req VendorRequest)
 // pullAndExportImages pulls the docker images of all referenced container images (if not yet
 // present locally), pushes them into an instance of a private docker registry and then
 // dumps the contents of this private registry into the specified directory
-func (v *vendorer) pullAndExportImages(ctx context.Context, images []string, exportDir string, parallel int, progress utils.Progress) error {
+func (v *vendorer) pullAndExportImages(ctx context.Context, layerExporter *layerExporter, images []string, exportDir string, parallel int) error {
 	resourcesDir := filepath.Join(exportDir, "resources")
 	if err := os.MkdirAll(resourcesDir, defaults.PrivateDirMask); err != nil {
 		return trace.Wrap(trace.ConvertSystemError(err),
@@ -397,10 +424,10 @@ func (v *vendorer) pullAndExportImages(ctx context.Context, images []string, exp
 			"failed to create %q", layersDir)
 	}
 
-	if err := exportLayers(ctx, exportDir, images, v.dockerClient,
-		log.WithField("export-directory", exportDir), parallel, progress); err != nil {
-		return trace.Wrap(err)
+	if err := layerExporter.push(ctx, images, parallel); err != nil {
+		return trace.Wrap(err, "failed to push images to local registry")
 	}
+
 	return nil
 }
 

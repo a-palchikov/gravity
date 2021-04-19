@@ -453,7 +453,7 @@ github.com/gravitational/kingpin
 github.com/gravitational/license
 github.com/gravitational/license/authority
 github.com/gravitational/license/constants
-# github.com/gravitational/magnet v0.2.4
+# github.com/gravitational/magnet v0.2.4 => github.com/a-palchikov/magnet v0.2.7-0.20210415185637-2bdfc7e7ff38
 ## explicit
 github.com/gravitational/magnet
 github.com/gravitational/magnet/common
@@ -563,9 +563,6 @@ github.com/gravitational/ttlmap/v2
 # github.com/gravitational/version v0.0.2-0.20170324200323-95d33ece5ce1
 ## explicit
 github.com/gravitational/version
-# github.com/gravitational/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
-## explicit
-github.com/gravitational/vfsgen
 # github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7
 github.com/gregjones/httpcache
 github.com/gregjones/httpcache/diskcache
@@ -797,8 +794,6 @@ github.com/satori/go.uuid
 github.com/sean-/seed
 # github.com/sergi/go-diff v1.0.0
 ## explicit
-# github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
-github.com/shurcooL/httpfs/vfsutil
 # github.com/shurcooL/sanitized_anchor_name v1.0.0
 github.com/shurcooL/sanitized_anchor_name
 # github.com/sirupsen/logrus v1.7.0 => github.com/gravitational/logrus v1.4.3
@@ -842,8 +837,6 @@ github.com/xeipuuv/gojsonschema
 ## explicit
 github.com/xtgo/set
 # github.com/ziutek/mymysql v1.5.4
-## explicit
-# go.etcd.io/bbolt v1.3.5
 ## explicit
 # go.mongodb.org/mongo-driver v1.0.3
 go.mongodb.org/mongo-driver/bson
@@ -893,6 +886,11 @@ golang.org/x/crypto/scrypt
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/agent
 golang.org/x/crypto/ssh/terminal
+# golang.org/x/mod v0.3.0
+golang.org/x/mod/internal/lazyregexp
+golang.org/x/mod/modfile
+golang.org/x/mod/module
+golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20201021035429-f5854403a974
 ## explicit
 golang.org/x/net/bpf
@@ -937,6 +935,9 @@ golang.org/x/text/unicode/norm
 golang.org/x/text/width
 # golang.org/x/time v0.0.0-20200416051211-89c76fbcd5d1 => golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 golang.org/x/time/rate
+# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+golang.org/x/xerrors
+golang.org/x/xerrors/internal
 # google.golang.org/appengine v1.5.0 => google.golang.org/appengine v1.2.0
 google.golang.org/appengine
 google.golang.org/appengine/internal
@@ -1529,6 +1530,7 @@ vbom.ml/util/sortorder
 # github.com/google/uuid => github.com/google/uuid v1.1.0
 # github.com/gophercloud/gophercloud => github.com/gophercloud/gophercloud v0.0.0-20181207171349-d3bcea3cf97e
 # github.com/gorilla/mux => github.com/gorilla/mux v1.7.0
+# github.com/gravitational/magnet => github.com/a-palchikov/magnet v0.2.7-0.20210415185637-2bdfc7e7ff38
 # github.com/gravitational/satellite => github.com/a-palchikov/satellite v0.0.9-0.20210412150653-ee686a40b0ac
 # github.com/hashicorp/go-cleanhttp => github.com/hashicorp/go-cleanhttp v0.5.0
 # github.com/hashicorp/go-uuid => github.com/hashicorp/go-uuid v1.0.0

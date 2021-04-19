@@ -37,7 +37,8 @@ STORAGE_APP_TAG ?= 0.0.1
 STORAGE_APP_BRANCH ?= $(STORAGE_APP_TAG)
 K8S_APP_TAG ?= 0.0.1
 TILLER_APP_TAG ?= 0.0.1
-SELINUX_BRANCH ?= distro/centos_rhel/7
+#SELINUX_BRANCH ?= distro/centos_rhel/7
+SELINUX_BRANCH ?= dmitri/go1.16.2
 
 GOLFLAGS ?= -w -s
 
@@ -50,7 +51,8 @@ INGRESS_APP_REPO = git@github.com:gravitational/ingress-app.git
 STORAGE_APP_REPO = git@github.com:gravitational/storage-app.git
 BANDWAGON_REPO = git@github.com:gravitational/bandwagon.git
 FIO_REPO = git@github.com:axboe/fio.git
-SELINUX_REPO = git@github.com:gravitational/selinux.git
+#SELINUX_REPO = git@github.com:gravitational/selinux.git
+SELINUX_REPO = git@github.com:a-palchikov/selinux.git
 
 # Amazon S3
 BUILD_BUCKET_URL = s3://clientbuilds.gravitational.io
@@ -673,9 +675,6 @@ selinux-policy-package: $(SELINUX_OUT)
 
 .PHONY: selinux
 selinux: $(SELINUX_ASSETS)
-ifeq ($(OS),linux)
-	$(MAKE) -C $(TOP)/lib/system/selinux
-endif
 
 .PHONY: push-selinux
 push-selinux: $(SELINUX_OUT)

@@ -46,10 +46,9 @@ ENV LANGUAGE="en_US.UTF-8" \
 RUN (wget --quiet -O /tmp/${TARBALL} ${PROTOC_URL} && \
      unzip -d /opt/protoc /tmp/${TARBALL} && \
      mkdir -p /gopath/src/github.com/gogo/ /gopath/src/github.com/grpc-ecosystem && \
-     git clone https://github.com/gogo/protobuf --branch ${GOGO_PROTO_TAG} /gopath/src/github.com/gogo/protobuf && cd /gopath/src/github.com/gogo/protobuf && make install && \
-     git clone https://github.com/grpc-ecosystem/grpc-gateway --branch ${GRPC_GATEWAY_TAG} /gopath/src/github.com/grpc-ecosystem/grpc-gateway && cd /gopath/src/github.com/grpc-ecosystem/grpc-gateway && pwd && go install ./protoc-gen-grpc-gateway)
+     git clone https://github.com/gogo/protobuf --branch ${GOGO_PROTO_TAG} --depth 1 /gopath/src/github.com/gogo/protobuf && cd /gopath/src/github.com/gogo/protobuf && make install && \
+     git clone https://github.com/grpc-ecosystem/grpc-gateway --branch ${GRPC_GATEWAY_TAG} --depth 1 /gopath/src/github.com/grpc-ecosystem/grpc-gateway && cd /gopath/src/github.com/grpc-ecosystem/grpc-gateway && pwd && go install ./protoc-gen-grpc-gateway)
 
 ENV PROTO_INCLUDE "/usr/local/include":"/gopath/src":"${GRPC_GATEWAY_ROOT}/third_party/googleapis":"${GOGOPROTO_ROOT}/gogoproto"
-
 
 VOLUME ["/gopath/src/github.com/gravitational/gravity"]

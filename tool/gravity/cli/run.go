@@ -281,6 +281,8 @@ func Execute(g *Application, cmd string, extraArgs []string) (err error) {
 		return initCluster(*g.SiteInitCmd.ConfigPath, *g.SiteInitCmd.InitPath)
 	case g.SiteStatusCmd.FullCommand():
 		return statusSite()
+	case g.SystemRegistryCmd.FullCommand():
+		return runDockerRegistry(*g.SystemRegistryCmd.RootDir, *g.SystemRegistryCmd.Addr)
 	}
 
 	var localEnv *localenv.LocalEnvironment

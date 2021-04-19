@@ -33,8 +33,15 @@ func buildBoxName() string {
 	return fmt.Sprint("gravity-build:", buildVersion)
 }
 
-// Go builds go binaries using consistent build environment.
-func (Build) Go() (err error) {
+func (r Build) Go() error {
+	if runtime.GOOS == "darwin" {
+		return r.Darwin()
+	}
+	return r.Linux()
+}
+
+// Linux builds Go Linux binaries using consistent build environment.
+func (Build) Linux() (err error) {
 	mg.Deps(Build.BuildContainer, Build.Selinux)
 
 	m := root.Target("build:go")
@@ -47,8 +54,7 @@ func (Build) Go() (err error) {
 		SetGOARCH("amd64").
 		SetEnv("GO111MODULE", "on").
 		SetMod("vendor").
-		AddTag("selinux").
-		AddTag("selinux_embed").
+		AddTag("selinux", "selinux_embed").
 		SetBuildContainer(fmt.Sprint("gravity-build:", buildVersion)).
 		SetOutputPath(consistentBinDir()).
 		AddLDFlags(buildFlags()).
@@ -57,7 +63,31 @@ func (Build) Go() (err error) {
 	return trace.Wrap(err)
 }
 
-// Darwin builds go binaries on darwin platform (doesn't support cross compile).
+// LinuxOsArch builds Go Linux binaries using consistent build environment and outputs
+// files with os/arch suffix.
+func (Build) LinuxOsArch() (err error) {
+	mg.Deps(Build.BuildContainer, Build.Selinux)
+
+	m := root.Target("build:go")
+	defer func() { m.Complete(err) }()
+
+	packages := []string{"github.com/gravitational/gravity/tool/gravity"}
+
+	err = m.GolangBuild().
+		SetGOOS("linux").
+		SetGOARCH("amd64").
+		SetEnv("GO111MODULE", "on").
+		SetMod("vendor").
+		AddTag("selinux", "selinux_embed").
+		SetBuildContainer(fmt.Sprint("gravity-build:", buildVersion)).
+		SetOutputPath(osArchBinDir("linux", "amd64")).
+		AddLDFlags(buildFlags()).
+		Build(context.TODO(), packages...)
+
+	return trace.Wrap(err)
+}
+
+// Darwin builds Go binaries on the Darwin platform (doesn't support cross compile).
 func (Build) Darwin() (err error) {
 	m := root.Target("build:darwin")
 	defer func() { m.Complete(err) }()
@@ -71,8 +101,9 @@ func (Build) Darwin() (err error) {
 		SetGOARCH("amd64").
 		SetEnv("GO111MODULE", "on").
 		SetMod("vendor").
+		SetOutputPath(consistentBinDir()).
 		AddLDFlags(buildFlags()).
-		Build(context.TODO(), "github.com/gravitational/gravity/tool/tele")
+		Build(context.TODO(), "github.com/gravitational/gravity/tool/gravity", "github.com/gravitational/gravity/tool/tele")
 
 	return trace.Wrap(err)
 }
@@ -101,10 +132,6 @@ func (Build) BuildContainer() (err error) {
 
 // Selinux builds internal selinux code
 func (Build) Selinux() (err error) {
-	if runtime.GOOS != "linux" {
-		return
-	}
-
 	m := root.Target("build:selinux")
 	defer func() { m.Complete(err) }()
 

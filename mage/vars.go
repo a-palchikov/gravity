@@ -86,16 +86,17 @@ var (
 	})
 
 	// planetTag is <planet version>-<encoded kubernetes version> as would be tagged in the planet repo
-	// TODO: We should consider a way to import planet directly from a docker image for OSS users customizing planet
+	// TODO: We should consider a way to import planet directly from a docker image for users customizing planet
 	// or add support for building off forks of the repo
 	//planetTag = fmt.Sprintf("7.1.4-%v", k8sVersionToPlanetFormat(k8sVersion))
 	planetTag = ""
 
 	planetBranch = magnet.E(magnet.EnvVar{
-		Key: "PLANET_BRANCH",
+		Key:     "PLANET_BRANCH",
+		Default: "dmitri/darwin",
 		//Default: planetTag,
-		Default: planetVersion,
-		Short:   "Alternate branch to build planet",
+		//Default: planetVersion,
+		Short: "Alternate branch to build planet",
 	})
 	planetVersion = magnet.E(magnet.EnvVar{
 		Key:     "PLANET_TAG",

@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -76,7 +77,7 @@ var (
 		name:       "planet",
 		version:    planetVersion,
 		gitBranch:  planetBranch,
-		gitRepo:    "https://github.com/gravitational/planet",
+		gitRepo:    "https://github.com/a-palchikov/planet-dev",
 		env: map[string]string{
 			"PLANET_BUILD_TAG": planetVersion,
 		},
@@ -213,7 +214,7 @@ func (Package) Telekube() (err error) {
 }
 
 func (Package) K8s() (err error) {
-	mg.Deps(Build.Go, Package.GravityPackage, Package.Teleport, Package.Fio, Package.Planet, Package.Web,
+	mg.Deps(Build.Go, Package.Gravity, Package.Teleport, Package.Fio, Package.Planet, Package.Web,
 		Package.Site, Package.Monitoring, Package.Logging, Package.Ingress, Package.Storage, Package.Tiller,
 		Package.Rbac, Package.DNS, Package.Bandwagon)
 
@@ -223,10 +224,18 @@ func (Package) K8s() (err error) {
 	return trace.Wrap(pkgKubernetes.localAppImport(m, consistentStateDir()))
 }
 
-func (Package) GravityPackage() (err error) {
-	mg.Deps(Build.Go)
+func (Package) Gravity() (err error) {
+	var binary string
+	if runtime.GOOS == "darwin" {
+		// Build linux/amd64 gravity binary for packaging
+		binary = osArchGravityBin("linux", "amd64")
+		mg.Deps(Build.Go, Build.LinuxOsArch)
+	} else {
+		binary = consistentGravityBin()
+		mg.Deps(Build.Go)
+	}
 
-	m := root.Target("package:gravity-package")
+	m := root.Target("package:gravity")
 	defer func() { m.Complete(err) }()
 
 	// the gravity package operates directly on the version state directory, so use the shared lock
@@ -252,7 +261,7 @@ func (Package) GravityPackage() (err error) {
 		"--state-dir", consistentStateDir(),
 		"package",
 		"import",
-		consistentGravityBin(),
+		binary,
 		gravityPackage,
 	)
 	if err != nil {
@@ -594,6 +603,17 @@ func consistentStateDir() string {
 	return path
 }
 
+func osArchBinDir(targetOS, targetArch string) string {
+	path := filepath.Join("build", root.Version, fmt.Sprintf("%v-%s", targetOS, targetArch))
+
+	err := os.MkdirAll(path, 0755)
+	if err != nil {
+		panic(trace.DebugReport(err))
+	}
+
+	return path
+}
+
 func consistentBinDir() string {
 	path := filepath.Join("build", root.Version, "bin")
 
@@ -613,6 +633,10 @@ func consistentBuildDir() string {
 	}
 
 	return path
+}
+
+func osArchGravityBin(os, arch string) string {
+	return filepath.Join("build", root.Version, fmt.Sprintf("%v-%v/gravity", os, arch))
 }
 
 func consistentGravityBin() string {
@@ -798,7 +822,11 @@ func (p gravityPackage) buildGit(m *magnet.Magnet) error {
 		return trace.ConvertSystemError(err)
 	}
 
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			m.Println("Failed to clean up temporary directory %q: %v", tmpDir, err)
+		}
+	}()
 
 	m.Println("  tmpDir:", tmpDir)
 	m.Println()
@@ -886,6 +914,7 @@ func (p gravityPackage) localAppImport(m *magnet.Magnet, stateDir string) error 
 	}
 
 	args := []string{
+		"--debug",
 		"--state-dir", stateDir,
 		"app", "import",
 		"--vendor",

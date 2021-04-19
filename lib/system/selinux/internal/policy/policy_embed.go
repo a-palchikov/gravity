@@ -1,7 +1,7 @@
-// +build generate_policy
+// +build selinux_embed
 
 /*
-Copyright 2020 Gravitational, Inc.
+Copyright 2021 Gravitational, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,24 +16,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package policy
 
 import (
-	"log"
-
-	"github.com/gravitational/gravity/lib/system/selinux/internal/policy"
-
-	"github.com/gravitational/vfsgen"
+	"io"
+	"embed"
 )
 
-func main() {
-	err := vfsgen.Generate(policy.Policy, vfsgen.Options{
-		Filename:     "policy_embed.go",
-		BuildTags:    "selinux_embed",
-		PackageName:  "policy",
-		VariableName: "Policy",
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
+//go:embed assets/centos/container.pp.bz2 assets/centos/gravity.pp.bz2 assets/centos/gravity.statedir.fc.template
+var contents embed.FS
+
+// Policy contains the SELinux policy.
+var Policy = policyFS{fs: contents}
+
+// Open returns the reader to the file with the specified path
+func (r policyFS) Open(path string) (io.ReadCloser, error) {
+	return r.fs.Open(path)
+}
+
+type policyFS struct{
+	fs embed.FS
 }

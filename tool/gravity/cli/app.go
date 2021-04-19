@@ -140,6 +140,18 @@ func uninstallAppPackage(env *localenv.LocalEnvironment, appPackage loc.Locator)
 	return nil
 }
 
+func runDockerRegistry(rootDir, addr string) error {
+	if addr == "" {
+		addr = "127.0.0.1:0"
+	}
+	config := docker.BasicConfiguration(addr, rootDir)
+	registry, err := docker.NewRegistry(config)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	return registry.Run()
+}
+
 // importApp imports an application from the specified directory creating a new
 // package named packageName.
 func importApp(env *localenv.LocalEnvironment, registryURL, dockerURL, source string, req *appservice.ImportRequest,
@@ -182,7 +194,9 @@ func importApp(env *localenv.LocalEnvironment, registryURL, dockerURL, source st
 	}
 
 	if req.Vendor {
-		dockerClient, err := docker.NewClient(dockerURL)
+		// FIXME(dima): make docker client setup more robust
+		// dockerClient, err := docker.NewClient(dockerURL)
+		dockerClient, err := docker.NewClientFromEnv()
 		if err != nil {
 			return trace.Wrap(err)
 		}

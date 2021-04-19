@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -32,27 +33,6 @@ import (
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
 )
-
-// exportLayers exports the layers of the specified set of images into
-// the specified local directory
-func exportLayers(ctx context.Context, dir string, images []string, dockerClient docker.DockerInterface, log log.FieldLogger,
-	parallel int, progress utils.Progress) error {
-	layerExporter, err := newLayerExporter(dir, dockerClient, log, progress)
-	if err != nil {
-		return trace.Wrap(err, "failed to create layer export")
-	}
-	defer func() {
-		if errStop := layerExporter.stop(); errStop != nil {
-			log.Warnf("Failed to stop exporter: %v.", errStop)
-		}
-	}()
-
-	if err = layerExporter.push(ctx, images, parallel); err != nil {
-		return trace.Wrap(err, "failed to push images to local registry")
-	}
-
-	return nil
-}
 
 // newLayerExporter creates an instance of layer exporter
 func newLayerExporter(exportDir string, client docker.DockerInterface, log log.FieldLogger, progress utils.Progress) (*layerExporter, error) {
@@ -69,6 +49,17 @@ func newLayerExporter(exportDir string, client docker.DockerInterface, log log.F
 		FieldLogger:      log,
 		dockerClient:     client,
 		registry:         registry,
+		registryAddr:     registry.Addr(),
+		progressReporter: progress,
+	}, nil
+}
+
+// newLayerExporterAt creates an instance of layer exporter with the specified registry address
+func newLayerExporterAtAddr(exportDir, registryAddr string, client docker.DockerInterface, log log.FieldLogger, progress utils.Progress) (*layerExporter, error) {
+	return &layerExporter{
+		FieldLogger:      log,
+		dockerClient:     client,
+		registryAddr:     registryAddr,
 		progressReporter: progress,
 	}, nil
 }
@@ -78,8 +69,10 @@ func newLayerExporter(exportDir string, client docker.DockerInterface, log log.F
 // docker registry
 type layerExporter struct {
 	log.FieldLogger
-	dockerClient     docker.DockerInterface
+	dockerClient docker.DockerInterface
+	// registry optionally references the running instance
 	registry         *docker.Registry
+	registryAddr     string
 	progressReporter utils.Progress
 }
 
@@ -93,11 +86,6 @@ func (r *layerExporter) push(ctx context.Context, images []string, parallel int)
 		return trace.Wrap(err)
 	}
 	return nil
-}
-
-// stop stops the instance of the local registry
-func (r *layerExporter) stop() error {
-	return r.registry.Close()
 }
 
 func (r *layerExporter) pushImage(image string) func() error {
@@ -123,7 +111,7 @@ func (r *layerExporter) pushImage(image string) func() error {
 
 func (r *layerExporter) tagCmd(image, repository, tag string) error {
 	opts := dockerapi.TagImageOptions{
-		Repo:  fmt.Sprintf("%v/%v", r.registry.Addr(), repository),
+		Repo:  fmt.Sprintf("%v/%v", r.registryAddr, repository),
 		Tag:   tag,
 		Force: true,
 	}
@@ -133,8 +121,10 @@ func (r *layerExporter) tagCmd(image, repository, tag string) error {
 
 func (r *layerExporter) pushCmd(name, tag string) error {
 	opts := dockerapi.PushImageOptions{
-		Name: fmt.Sprintf("%v/%v", r.registry.Addr(), name),
-		Tag:  tag,
+		Name:          fmt.Sprintf("%v/%v", r.registryAddr, name),
+		Tag:           tag,
+		OutputStream:  os.Stderr,
+		RawJSONStream: true,
 	}
 	r.Infof("Pushing %v.", opts)
 	// Workaround a registry issue after updating go-dockerclient, set the password field to an invalid value so the
@@ -149,7 +139,7 @@ func (r *layerExporter) removeTagCmd(name, tag string) error {
 	if tag == "" {
 		tag = "latest"
 	}
-	localImage := fmt.Sprintf("%v/%v:%v", r.registry.Addr(), name, tag)
+	localImage := fmt.Sprintf("%v/%v:%v", r.registryAddr, name, tag)
 	r.Infof("Removing %v.", localImage)
 	return r.dockerClient.RemoveImage(localImage)
 }
