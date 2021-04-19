@@ -752,6 +752,7 @@ magnet-vars:
 	@echo TILLER_VERSION=${TILLER_VERSION}
 	@echo SELINUX_VERSION=${SELINUX_VERSION}
 	@echo WORMHOLE_IMG=${WORMHOLE_IMG}
+	@echo BUILD_VERSION=${GRAVITY_VERSION}
 
 
 include build.assets/etcd.mk
