@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/docker/distribution/configuration"
 	registrycontext "github.com/docker/distribution/context"
@@ -84,10 +85,13 @@ func (r *Registry) listenAndServe(listener net.Listener) error {
 
 // Addr returns the address this registry listens on.
 func (r *Registry) Addr() string {
-	switch addr := r.addr.(type) {
-	case *net.TCPAddr:
-		// FIXME(dima): avoid hardcoding 0.0.0.0
-		return fmt.Sprintf("0.0.0.0:%d", addr.Port)
+	if runtime.GOOS == "darwin" {
+		switch addr := r.addr.(type) {
+		case *net.TCPAddr:
+			// See https://github.com/docker/for-mac/issues/3611
+			// FIXME(dima): avoid hardcoding 0.0.0.0
+			return fmt.Sprintf("0.0.0.0:%d", addr.Port)
+		}
 	}
 	return r.addr.String()
 }
