@@ -1,6 +1,7 @@
 Steps to update the repo from `upstream` (https://github.com/gravitational/gravity).
 
 ```bash
+git remote add gravitational-gravity https://github.com/gravitational/gravity.git
 git br -D upstream
 git branch -f upstream gravitational-gravity/master
 git co upstream
