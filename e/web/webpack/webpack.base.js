@@ -25,6 +25,19 @@ const TELEBASE_PATH = path.join(ROOT_PATH, 'oss-src');
 const SHARED_BASE_PATH = path.join(ROOT_PATH, 'shared');
 const FAVICON_PATH = path.join(TELEBASE_PATH, '/assets/favicon.ico');
 
+const ESLintPlugin = require('eslint-webpack-plugin');
+
+// TODO(dima): complete migration from eslit-loader to eslint-webpack-plugin
+// See https://www.npmjs.com/package/eslint-webpack-plugin and https://laurieontech.com/posts/eslint-webpack-plugin/
+const options = {
+    extensions: [`js`, `jsx`],
+    exclude: [
+      `/node_modules/`,
+      `/assets/`,
+      `/*.json/`,
+    ],
+};
+
 if (!fs.existsSync(TELEBASE_PATH)){
   throw Error('cannot find Gravity open source directory');
 }
@@ -159,12 +172,6 @@ module.exports = {
     },
 
     jsx: jsx,
-    jslint: {
-      enforce: "pre",
-      test: /\.(js)|(jsx)$/,
-      exclude: /(node_modules)|(.json$)|(assets)/,
-      loader: "eslint-loader",
-    },
   },
 
   plugins: {
@@ -184,6 +191,10 @@ module.exports = {
       return new MiniCssExtractPlugin({
         filename: "styles.[contenthash].css",
       })
+    },
+
+    lint() {
+      return new ESLintPlugin(options)
     }
   }
 };
@@ -202,12 +213,6 @@ function jsx(args){
     use: [
       {
         loader: 'babel-loader',
-      },
-      {
-        loader: "eslint-loader",
-        options: {
-          emitWarning
-        }
       }
     ]
   }

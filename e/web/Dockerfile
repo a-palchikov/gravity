@@ -12,24 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM node:12.18.3-stretch-slim
+ARG NPM_VER=7.11.0
 
-RUN apt-get update && apt-get install git -y
+FROM node:12-alpine AS builder
+ARG NPM_VER
+
+RUN set -ex && apk --no-cache add git python2 make build-base
+
+RUN set -ex && \
+	npm install --silent -g npm@${NPM_VER} gulp && \
+	npm set audit false
 
 # prepare to install only package.json dependencies
 RUN mkdir -p /app
-COPY package*.json /app/
+#COPY package*.json /app/
+COPY package.json /app/
 
 # copy the rest of the app files
 WORKDIR /app
 
-RUN npm set audit false ;\
-    npm install --silent
-
+RUN set -ex && npm install
 COPY . /app
-
 # and build
 RUN npm run build
-
 # tar up the resulting build
 RUN tar -C /app/dist -czf /web-assets.tar.gz .
+
+FROM scratch AS releaser
+COPY --from=builder /app/dist /

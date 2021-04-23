@@ -49,8 +49,6 @@ var cfg = {
   },
 
   plugins:  [
-    //new BundleAnalyzerPlugin(),
-    new webpack.HashedModuleIdsPlugin(),
     baseCfg.plugins.createIndexHtml(),
  ]
 };

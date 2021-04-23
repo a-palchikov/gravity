@@ -26,11 +26,10 @@ all: docker-build
 #
 .PHONY:docker-build
 docker-build: ensure-deps
-	rm -rf $(HOST_DIR)/dist
-	DOCKER_BUILDKIT=1 PROGRESS_NO_TRUNC=1 docker build --force-rm=true -t $(IMAGE_NAME) .
-	docker create --name $(CONTAINER_NAME) -t $(IMAGE_NAME) && \
-	docker cp $(CONTAINER_NAME):$(CONTAINER_DIST_DIR) $(HOST_DIR)
-	docker rm $(CONTAINER_NAME) | true
+	docker buildx build \
+		--target=releaser \
+		--output="type=local,dest=./dist" \
+		.
 
 #
 # Removes the local Docker container
