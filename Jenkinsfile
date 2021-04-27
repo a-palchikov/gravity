@@ -1,3 +1,11 @@
+timestamps {
+  node() {
+    stage('Checkout source') {
+      print 'Running stage Checkout source'
+    }
+  }
+}
+
 ////
 // Original Jenkinsfile: start
 ////
