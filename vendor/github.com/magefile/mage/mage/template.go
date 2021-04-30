@@ -21,8 +21,8 @@ import (
 	"text/tabwriter"
 	"time"
 	
-	"github.com/gravitational/magnet"
-	
+	"github.com/magefile/mage/mg"
+
 	{{range .Imports}}{{.UniqueName}} "{{.Path}}"
 	{{end}}
 )
@@ -304,7 +304,7 @@ Options:
 
 	handleError := func(logger *log.Logger, err interface{}) {
 		if err != nil {
-			magnet.Shutdown()
+			mg.RunShutdownHooks()
 			logger.Printf("Error: %+v\n", err)
 			type code interface {
 				ExitStatus() int
@@ -387,13 +387,13 @@ Options:
 		}
 	}
 
-	defer magnet.Shutdown()
+	defer mg.RunShutdownHooks()
 	if len(args.Args) < 1 {
 	{{- if .DefaultFunc.Name}}
 		ignoreDefault, _ := strconv.ParseBool(os.Getenv("MAGEFILE_IGNOREDEFAULT"))
 		if ignoreDefault {
 			if err := list(); err != nil {
-				magnet.Shutdown()
+				mg.RunShutdownHooks()
 				logger.Println("Error:", err)
 				os.Exit(1)
 			}
@@ -404,7 +404,7 @@ Options:
 		return
 	{{- else}}
 		if err := list(); err != nil {
-			magnet.Shutdown()
+			mg.RunShutdownHooks()
 			logger.Println("Error:", err)
 			os.Exit(1)
 		}
@@ -458,6 +458,7 @@ Options:
 			{{- end}}
 		{{- end}}
 		default:
+			mg.RunShutdownHooks()
 			logger.Printf("Unknown target specified: %q\n", target)
 			os.Exit(2)
 		}

@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gravitational/magnet"
 	"github.com/gravitational/trace"
 )
 
@@ -31,7 +30,7 @@ func Clean() (err error) {
 
 // Env outputs the list of imported environment variables
 func Env() (err error) {
-	for k, v := range magnet.ImportEnvVars {
+	for k, v := range root.Config.ImportEnv {
 		fmt.Println(k, ":", v)
 	}
 

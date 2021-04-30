@@ -724,7 +724,7 @@ func (p gravityPackage) DefaultCachePath() string {
 // IsAppCachedAndSync checks whether the package is available in the cache and if missing syncs to the active state
 // directory.
 // path allows overiding the binary path from the default location.
-func (p gravityPackage) IsAppCachedAndSync(m *magnet.Magnet, path string) (bool, error) {
+func (p gravityPackage) IsAppCachedAndSync(m *magnet.MagnetTarget, path string) (bool, error) {
 	if path == "" {
 		path = p.DefaultCachePath()
 	}
@@ -750,7 +750,7 @@ func (p gravityPackage) IsAppCachedAndSync(m *magnet.Magnet, path string) (bool,
 	return true, trace.Wrap(err)
 }
 
-func (p gravityPackage) SyncAppToStateDir(m *magnet.Magnet, path string) error {
+func (p gravityPackage) SyncAppToStateDir(m *magnet.MagnetTarget, path string) error {
 	if !p.force {
 		packageList, err := magnet.Output(context.TODO(),
 			consistentGravityBin(),
@@ -804,7 +804,7 @@ func (p gravityPackage) SyncAppToStateDir(m *magnet.Magnet, path string) error {
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) buildLocal(m *magnet.Magnet) error {
+func (p gravityPackage) buildLocal(m *magnet.MagnetTarget) error {
 	stateDir, err := ioutil.TempDir("", fmt.Sprint("build-app-", p.name))
 	if err != nil {
 		return trace.ConvertSystemError(err)
@@ -835,7 +835,7 @@ func (p gravityPackage) buildLocal(m *magnet.Magnet) error {
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) buildGit(m *magnet.Magnet) error {
+func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
 	tmpDir, err := ioutil.TempDir("", fmt.Sprint("build-app-", p.name))
 	if err != nil {
 		return trace.ConvertSystemError(err)
@@ -920,7 +920,7 @@ func (p gravityPackage) buildGit(m *magnet.Magnet) error {
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) localAppImport(m *magnet.Magnet, stateDir string) error {
+func (p gravityPackage) localAppImport(m *magnet.MagnetTarget, stateDir string) error {
 	_, err := m.Exec().Run(
 		context.TODO(),
 		consistentGravityBin(),
@@ -970,7 +970,7 @@ func (p gravityPackage) localAppImport(m *magnet.Magnet, stateDir string) error 
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) ImportPackage(m *magnet.Magnet, path string) error {
+func (p gravityPackage) ImportPackage(m *magnet.MagnetTarget, path string) error {
 	// I'm not sure the gravity package store is really protected against concurrent access
 	// so until we're sure, have operations take a lock
 	sharedStateMutex.Lock()

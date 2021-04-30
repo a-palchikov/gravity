@@ -1,4 +1,4 @@
-//+build mage
+// +build mage
 
 /*
 Copyright 2020 Gravitational, Inc.
@@ -16,9 +16,6 @@ limitations under the License.
 package main
 
 import (
-	// mage:import
-	_ "github.com/gravitational/magnet/common"
-
 	// mage:import
 	_ "github.com/gravitational/gravity/mage"
 )
