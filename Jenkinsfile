@@ -1,7 +1,3 @@
-////
-// Original Jenkinsfile: start
-////
-/*
 #!/usr/bin/env groovy
 def propagateParamsToEnv() {
   for (param in params) {
@@ -124,7 +120,3 @@ timestamps {
     ) // end parallel
   }} // end ansiColor & node
 }
-*/
-////
-// Original Jenkinsfile: end
-////
