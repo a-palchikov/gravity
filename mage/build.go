@@ -25,6 +25,7 @@ import (
 	"runtime"
 
 	"github.com/gravitational/trace"
+
 	"github.com/magefile/mage/mg"
 )
 
@@ -142,22 +143,26 @@ func (Build) Selinux(ctx context.Context) (err error) {
 	m := root.Target("build:selinux")
 	defer func() { m.Complete(err) }()
 
-	// _, err = m.Exec().Run(ctx, "make", "-f", "Makefile.buildx", "selinux")
+	uptodate := IsUpToDate("lib/system/selinux/internal/policy/policy_embed.go",
+		"lib/system/selinux/internal/policy/policy.go",
+		"lib/system/selinux/internal/policy/assets",
+	)
+	if uptodate {
+		return nil
+	}
+
 	_, err = m.Exec().Run(ctx, "make", "-C", "lib/system/selinux")
 	return trace.Wrap(err)
 }
 
 func (Build) SelinuxPolicy(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
-
-	m := root.Target("build:selinux-policy")
+	m := root.Target("build:selinuxpolicy")
 	defer func() { m.Complete(err) }()
 
 	tmpDir, err := ioutil.TempDir("", "build-selinux")
 	if err != nil {
 		return trace.ConvertSystemError(err)
 	}
-
 	defer os.RemoveAll(tmpDir)
 
 	// TODO(dima): move build directory to configuration
@@ -165,8 +170,15 @@ func (Build) SelinuxPolicy(ctx context.Context) (err error) {
 
 	if _, err := os.Stat(cachePath); err == nil {
 		m.SetCached(true)
-		// TODO(dima): alternatively, copy selinux assets to the assets directory
-		return nil
+		_, err := m.Exec().
+			// TODO(dima): have selinux makefile output to a subdirectory per
+			// supported OS distribution instead of hardcoding it
+			Run(ctx, "tar", "xf", cachePath, "-C", "lib/system/selinux/internal/policy/assets/centos")
+		return trace.Wrap(err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
+		return trace.Wrap(trace.ConvertSystemError(err))
 	}
 
 	_, err = m.Exec().SetWD(tmpDir).Run(ctx,
@@ -202,11 +214,12 @@ func (Build) SelinuxPolicy(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	// TODO(dima): copy selinux assets to the assets directory directly
 	_, err = m.Exec().
 		Run(ctx, "tar", "czf", cachePath,
 			"-C", outputDir,
-			"gravity.pp.bz2", "container.pp.bz2", "gravity.statedir.fc.template",
+			"gravity.pp.bz2",
+			"container.pp.bz2",
+			"gravity.statedir.fc.template",
 		)
 	return trace.Wrap(err)
 }
