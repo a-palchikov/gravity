@@ -1,9 +1,7 @@
-
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_DIR := $(realpath $(patsubst %/,%,$(dir $(MKFILE_PATH))))
 
 BUILDDIR ?= $(realpath _build)
-APPSDIR := $(BUILDDIR)/apps
 
 #GOLANG_VER ?= 1.13.8-buster
 # TODO(dima): keep building with stretch as long as centos/7 is supported
@@ -36,15 +34,9 @@ K8S_VER := 1.21.0
 # wormhole container URI for default install
 WORMHOLE_IMG ?= quay.io/gravitational/wormhole:0.3.3
 # selinux
-SELINUX_OUT := $(BUILDDIR)/apps/selinux-policy.tgz
 SELINUX_VERSION ?= 6.0.0
-SELINUX_REPO = git@github.com:gravitational/selinux.git
-SELINUX_BRANCH ?= distro/centos_rhel/7
-SELINUX_ASSETSDIR := $(CURRENT_DIR)/lib/system/selinux/internal/policy/assets/centos
-SELINUX_ASSETS := \
-	$(SELINUX_ASSETSDIR)/gravity.pp.bz2 \
-	$(SELINUX_ASSETSDIR)/container.pp.bz2 \
-	$(SELINUX_ASSETSDIR)/gravity.statedir.fc.template
+SELINUX_REPO = git@github.com:a-palchikov/selinux.git
+SELINUX_BRANCH ?= dmitri/buildx
 
 # Set to non-empty value to trigger streaming builder progress
 CI ?=
@@ -75,33 +67,7 @@ binaries: $(BUILDER)
 tarball:
 	$(BUILDER) cluster:gravity
 
-.PHONY: selinux
-selinux: $(SELINUX_ASSETS)
-	$(MAKE) -C $(CURRENT_DIR)/lib/system/selinux
-
-$(SELINUX_ASSETS): $(SELINUX_OUT) | $(SELINUX_ASSETSDIR)
-	tar xf $^ -C $(@D) $(@F)
-
-$(SELINUX_ASSETSDIR):
-	mkdir -p $@
-
-# TODO(dima): move to mage
-$(SELINUX_OUT): WORKDIR=$(APPSDIR)/selinux
-$(SELINUX_OUT): | $(APPSDIR)
-	@echo Workding directory: $(WORKDIR)
-	set -ex && \
-	( test -d $(WORKDIR) || git clone $(SELINUX_REPO) $(WORKDIR) ) && \
-	cd $(WORKDIR) && \
-	git fetch --all && \
-	git checkout $(SELINUX_BRANCH) && \
-	git pull origin $(SELINUX_BRANCH) && git submodule update --init --recursive && \
-	make -C $(WORKDIR) BUILDBOX_INSTANCE= && \
-	tar czf $@ -C $(WORKDIR)/output gravity.pp.bz2 container.pp.bz2 gravity.statedir.fc.template
-
 $(BUILDDIR):
-	mkdir -p $@
-
-$(APPSDIR):
 	mkdir -p $@
 
 .PHONY: clean
@@ -110,27 +76,29 @@ clean:
 
 .PHONY: magnet-vars
 magnet-vars:
-	@echo MAGNET_GOLANG_VER=${GOLANG_VER}
-	@echo MAGNET_FIO_VER=${FIO_VER}
-	@echo MAGNET_TELEPORT_TAG=${TELEPORT_TAG}
-	@echo MAGNET_GRPC_PROTOC_VER=${PROTOC_VER}
-	@echo MAGNET_GOGO_PROTO_TAG=${GOGO_PROTO_TAG}
-	@echo MAGNET_GRPC_GATEWAY_TAG=${GRPC_GATEWAY_TAG}
-	@echo MAGNET_K8S_VER=${K8S_VER}
-	@echo MAGNET_PLANET_TAG=${PLANET_TAG}
-	@echo MAGNET_PLANET_BRANCH=${PLANET_BRANCH}
-	@echo MAGNET_INGRESS_APP_VERSION=${INGRESS_APP_TAG}
-	@echo MAGNET_STORAGE_APP_VERSION=${STORAGE_APP_TAG}
-	@echo MAGNET_LOGGING_APP_VERSION=${LOGGING_APP_TAG}
-	@echo MAGNET_MONITORING_APP_VERSION=${MONITORING_APP_TAG}
-	@echo MAGNET_MONITORING_APP_REPO=${MONITORING_APP_REPO}
-	@echo MAGNET_MONITORING_APP_BRANCH=${MONITORING_APP_BRANCH}
-	@echo MAGNET_BANDWAGON_APP_TAG=${BANDWAGON_TAG}
-	@echo MAGNET_DNS_APP_VERSION=${DNS_APP_TAG}
-	@echo MAGNET_TILLER_APP_TAG=${TILLER_APP_TAG}
-	@echo MAGNET_TILLER_VERSION=${TILLER_VERSION}
-	@echo MAGNET_SELINUX_VERSION=${SELINUX_VERSION}
-	@echo MAGNET_WORMHOLE_IMG=${WORMHOLE_IMG}
-	@echo MAGNET_BUILD_VERSION=${GRAVITY_VERSION}
-	@echo MAGNET_CI=${CI}
+	@echo MAGNET_GOLANG_VER=$(GOLANG_VER)
+	@echo MAGNET_FIO_VER=$(FIO_VER)
+	@echo MAGNET_TELEPORT_TAG=$(TELEPORT_TAG)
+	@echo MAGNET_GRPC_PROTOC_VER=$(PROTOC_VER)
+	@echo MAGNET_GOGO_PROTO_TAG=$(GOGO_PROTO_TAG)
+	@echo MAGNET_GRPC_GATEWAY_TAG=$(GRPC_GATEWAY_TAG)
+	@echo MAGNET_K8S_VER=$(K8S_VER)
+	@echo MAGNET_PLANET_TAG=$(PLANET_TAG)
+	@echo MAGNET_PLANET_BRANCH=$(PLANET_BRANCH)
+	@echo MAGNET_INGRESS_APP_VERSION=$(INGRESS_APP_TAG)
+	@echo MAGNET_STORAGE_APP_VERSION=$(STORAGE_APP_TAG)
+	@echo MAGNET_LOGGING_APP_VERSION=$(LOGGING_APP_TAG)
+	@echo MAGNET_MONITORING_APP_VERSION=$(MONITORING_APP_TAG)
+	@echo MAGNET_MONITORING_APP_REPO=$(MONITORING_APP_REPO)
+	@echo MAGNET_MONITORING_APP_BRANCH=$(MONITORING_APP_BRANCH)
+	@echo MAGNET_BANDWAGON_APP_TAG=$(BANDWAGON_TAG)
+	@echo MAGNET_DNS_APP_VERSION=$(DNS_APP_TAG)
+	@echo MAGNET_TILLER_APP_TAG=$(TILLER_APP_TAG)
+	@echo MAGNET_TILLER_VERSION=$(TILLER_VERSION)
+	@echo MAGNET_SELINUX_VERSION=$(SELINUX_VERSION)
+	@echo MAGNET_SELINUX_REPO=$(SELINUX_REPO)
+	@echo MAGNET_SELINUX_BRANCH=$(SELINUX_BRANCH)
+	@echo MAGNET_WORMHOLE_IMG=$(WORMHOLE_IMG)
+	@echo MAGNET_BUILD_VERSION=$(GRAVITY_VERSION)
+	@echo MAGNET_CI=$(CI)
 

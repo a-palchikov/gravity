@@ -1,9 +1,12 @@
 /*
-Copyright 2020 Gravitational, Inc.
+Copyright 2021 Gravitational, Inc.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,7 +19,9 @@ package mage
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/gravitational/trace"
@@ -131,10 +136,77 @@ func (Build) BuildContainer() (err error) {
 }
 
 // Selinux builds internal selinux code
-func (Build) Selinux() (err error) {
+func (Build) Selinux(ctx context.Context) (err error) {
+	mg.Deps(Build.SelinuxPolicy)
+
 	m := root.Target("build:selinux")
 	defer func() { m.Complete(err) }()
 
-	_, err = m.Exec().Run(context.TODO(), "make", "selinux")
+	// _, err = m.Exec().Run(ctx, "make", "-f", "Makefile.buildx", "selinux")
+	_, err = m.Exec().Run(ctx, "make", "-C", "lib/system/selinux")
+	return trace.Wrap(err)
+}
+
+func (Build) SelinuxPolicy(ctx context.Context) (err error) {
+	mg.Deps(Build.Go)
+
+	m := root.Target("build:selinux-policy")
+	defer func() { m.Complete(err) }()
+
+	tmpDir, err := ioutil.TempDir("", "build-selinux")
+	if err != nil {
+		return trace.ConvertSystemError(err)
+	}
+
+	defer os.RemoveAll(tmpDir)
+
+	// TODO(dima): move build directory to configuration
+	cachePath := filepath.Join("_build/apps", fmt.Sprint("selinux.", pkgSelinux.version, ".tar.gz"))
+
+	if _, err := os.Stat(cachePath); err == nil {
+		m.SetCached(true)
+		// TODO(dima): alternatively, copy selinux assets to the assets directory
+		return nil
+	}
+
+	_, err = m.Exec().SetWD(tmpDir).Run(ctx,
+		"git",
+		"clone",
+		selinuxRepo,
+		"--branch", selinuxBranch,
+		"--depth=1",
+		"./",
+	)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	_, err = m.Exec().SetWD(tmpDir).Run(ctx,
+		"git",
+		"submodule",
+		"update",
+		"--init",
+		"--recursive",
+	)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	outputDir := filepath.Join(tmpDir, "output")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return trace.Wrap(trace.ConvertSystemError(err))
+	}
+
+	_, err = m.Exec().SetWD(tmpDir).Run(ctx, "make", "BUILDBOX_INSTANCE=")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	// TODO(dima): copy selinux assets to the assets directory directly
+	_, err = m.Exec().
+		Run(ctx, "tar", "czf", cachePath,
+			"-C", outputDir,
+			"gravity.pp.bz2", "container.pp.bz2", "gravity.statedir.fc.template",
+		)
 	return trace.Wrap(err)
 }

@@ -204,16 +204,16 @@ var (
 	}
 )
 
-func (Package) Telekube() (err error) {
+func (Package) Telekube(ctx context.Context) (err error) {
 	mg.Deps(Build.Go, Package.K8s)
 
 	m := root.Target("package:telekube")
 	defer func() { m.Complete(err) }()
 
-	return trace.Wrap(pkgTelekube.localAppImport(m, consistentStateDir()))
+	return trace.Wrap(pkgTelekube.localAppImport(ctx, m, consistentStateDir()))
 }
 
-func (Package) K8s() (err error) {
+func (Package) K8s(ctx context.Context) (err error) {
 	mg.Deps(Build.Go, Package.Gravity, Package.Teleport, Package.Fio, Package.Planet, Package.Web,
 		Package.Site, Package.Monitoring, Package.Logging, Package.Ingress, Package.Storage, Package.Tiller,
 		Package.Rbac, Package.DNS, Package.Bandwagon)
@@ -221,10 +221,10 @@ func (Package) K8s() (err error) {
 	m := root.Target("package:k8s")
 	defer func() { m.Complete(err) }()
 
-	return trace.Wrap(pkgKubernetes.localAppImport(m, consistentStateDir()))
+	return trace.Wrap(pkgKubernetes.localAppImport(ctx, m, consistentStateDir()))
 }
 
-func (Package) Gravity() (err error) {
+func (Package) Gravity(ctx context.Context) (err error) {
 	var binary string
 	if runtime.GOOS == "darwin" {
 		// Build linux/amd64 gravity binary for packaging
@@ -244,7 +244,7 @@ func (Package) Gravity() (err error) {
 
 	gravityPackage := fmt.Sprint("gravitational.io/gravity:", buildVersion)
 
-	_, err = m.Exec().Run(context.TODO(),
+	_, err = m.Exec().Run(ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"package",
@@ -256,7 +256,7 @@ func (Package) Gravity() (err error) {
 		return trace.Wrap(err)
 	}
 
-	_, err = m.Exec().Run(context.TODO(),
+	_, err = m.Exec().Run(ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"package",
@@ -271,7 +271,7 @@ func (Package) Gravity() (err error) {
 	return nil
 }
 
-func (Package) Teleport() (err error) {
+func (Package) Teleport(ctx context.Context) (err error) {
 	mg.Deps(Build.Go)
 
 	m := root.Target("package:teleport")
@@ -283,7 +283,7 @@ func (Package) Teleport() (err error) {
 	_, err = os.Stat(cachePath)
 	if !os.IsNotExist(err) {
 		m.SetCached(true)
-		return trace.Wrap(pkgTeleport.ImportPackage(m, cachePath))
+		return trace.Wrap(pkgTeleport.ImportPackage(ctx, m, cachePath))
 	}
 
 	tmpDir, err := ioutil.TempDir("", "build-teleport")
@@ -309,7 +309,7 @@ func (Package) Teleport() (err error) {
 		}
 	}
 
-	_, err = m.Exec().SetWD(tmpDir).Run(context.TODO(),
+	_, err = m.Exec().SetWD(tmpDir).Run(ctx,
 		"git",
 		"clone",
 		"https://github.com/gravitational/teleport",
@@ -324,7 +324,7 @@ func (Package) Teleport() (err error) {
 	buildAssets := filepath.Join(tmpDir, "src/build.assets")
 
 	_, err = m.Exec().SetWD(buildAssets).
-		Run(context.TODO(), "make", "build-binaries")
+		Run(ctx, "make", "build-binaries")
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -351,15 +351,15 @@ func (Package) Teleport() (err error) {
 	}
 
 	_, err = m.Exec().
-		Run(context.TODO(), "tar", "-C", buildDir, "-czf", cachePath, ".")
+		Run(ctx, "tar", "-C", buildDir, "-czf", cachePath, ".")
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	return trace.Wrap(pkgTeleport.ImportPackage(m, cachePath))
+	return trace.Wrap(pkgTeleport.ImportPackage(ctx, m, cachePath))
 }
 
-func (Package) Fio() (err error) {
+func (Package) Fio(ctx context.Context) (err error) {
 	mg.Deps(Build.BuildContainer, Build.Go)
 
 	m := root.Target("package:fio")
@@ -372,7 +372,7 @@ func (Package) Fio() (err error) {
 		SetBuildArg("FIO_BRANCH", fioTag).
 		SetPull(false).
 		AddTag(fioImage).
-		Build(context.TODO(), "assets/fio")
+		Build(ctx, "assets/fio")
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -386,7 +386,7 @@ func (Package) Fio() (err error) {
 			Source:      filepath.Join(wd, "_build/"),
 			Destination: "/local",
 		}).
-		Run(context.TODO(), fioImage, "cp", "/gopath/native/fio/fio", filepath.Join("/local", "fio"))
+		Run(ctx, fioImage, "cp", "/gopath/native/fio/fio", filepath.Join("/local", "fio"))
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -395,74 +395,16 @@ func (Package) Fio() (err error) {
 	defer os.Remove("_build/fio")
 
 	// TODO(dima): move build directory to configuration
-	return trace.Wrap(pkgFio.ImportPackage(m, "_build/fio"))
+	return trace.Wrap(pkgFio.ImportPackage(ctx, m, "_build/fio"))
 }
 
-func (Package) Selinux() (err error) {
-	mg.Deps(Build.Go)
-
-	m := root.Target("package:selinux")
-	defer func() { m.Complete(err) }()
-
-	tmpDir, err := ioutil.TempDir("", "build-selinux")
-	if err != nil {
-		return trace.ConvertSystemError(err)
-	}
-
-	defer os.RemoveAll(tmpDir)
-
-	_, err = m.Exec().SetWD(tmpDir).Run(context.TODO(),
-		"git",
-		"clone",
-		selinuxRepo,
-		"--branch", selinuxBranch,
-		"--depth=1",
-		"./",
-	)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	_, err = m.Exec().SetWD(tmpDir).Run(context.TODO(),
-		"git",
-		"submodule",
-		"update",
-		"--init",
-		"--recursive",
-	)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	_, err = m.Exec().SetWD(tmpDir).
-		Run(context.TODO(), "make", "BUILDBOX_INSTANCE=")
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	// TODO(dima): move build directory to configuration
-	cachePath := filepath.Join("_build/apps", fmt.Sprint("selinux.", pkgSelinux.version, ".tar.gz"))
-
-	_, err = m.Exec().SetWD(filepath.Join(tmpDir, "selinux/output")).
-		Run(context.TODO(),
-			"tar",
-			"czf", cachePath,
-			"gravity.pp.bz2", "container.pp.bz2", "gravity.statedir.fc.template",
-		)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	return trace.Wrap(pkgFio.ImportPackage(m, cachePath))
-}
-
-func (Package) Planet() (err error) {
+func (Package) Planet(ctx context.Context) (err error) {
 	mg.Deps(Build.Go)
 
 	m := root.Target("package:planet")
 	defer func() { m.Complete(err) }()
 
-	packageList, err := magnet.Output(context.TODO(),
+	packageList, err := magnet.Output(ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"package",
@@ -479,18 +421,18 @@ func (Package) Planet() (err error) {
 
 	if _, err := os.Stat(pkgPlanet.DefaultCachePath()); !os.IsNotExist(err) {
 		m.SetCached(true)
-		return trace.Wrap(pkgPlanet.ImportPackage(m, pkgPlanet.DefaultCachePath()))
+		return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.DefaultCachePath()))
 	}
 
-	err = pkgPlanet.BuildApp()
+	err = pkgPlanet.BuildApp(ctx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	return trace.Wrap(pkgPlanet.ImportPackage(m, pkgPlanet.DefaultCachePath()))
+	return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.DefaultCachePath()))
 }
 
-func (Package) Web() (err error) {
+func (Package) Web(ctx context.Context) (err error) {
 	mg.Deps(Build.Go)
 
 	m := root.Target("package:web-assets")
@@ -503,7 +445,7 @@ func (Package) Web() (err error) {
 		AddTag(webImage).
 		SetBuildArg("NODE_VER", "12.18.3-buster").
 		SetDockerfile("web/Dockerfile.buildx").
-		Build(context.TODO(), contextPath)
+		Build(ctx, contextPath)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -519,7 +461,7 @@ func (Package) Web() (err error) {
 			Source:      filepath.Join(wd, "_build"),
 			Destination: "/local",
 		}).
-		Run(context.TODO(), webImage, "cp", "-r", "/web-assets.tar.gz", "/local/")
+		Run(ctx, webImage, "cp", "-r", "/web-assets.tar.gz", "/local/")
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -528,10 +470,10 @@ func (Package) Web() (err error) {
 	defer os.Remove("_build/web-assets.tar.gz")
 
 	// TODO(dima): move build directory to configuration
-	return trace.Wrap(pkgWebAssets.ImportPackage(m, "_build/web-assets.tar.gz"))
+	return trace.Wrap(pkgWebAssets.ImportPackage(ctx, m, "_build/web-assets.tar.gz"))
 }
 
-func (Package) Site() (err error) {
+func (Package) Site(ctx context.Context) (err error) {
 	mg.Deps(Build.Go)
 
 	m := root.Target("package:site")
@@ -541,7 +483,7 @@ func (Package) Site() (err error) {
 		SetBuildArg("CHANGESET", fmt.Sprint("site-", buildVersion)).
 		SetPull(true).
 		AddTag(fmt.Sprint("site-app-hook:", buildVersion)).
-		Build(context.TODO(), "assets/site-app/images/hook")
+		Build(ctx, "assets/site-app/images/hook")
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -551,40 +493,40 @@ func (Package) Site() (err error) {
 		AddTag(fmt.Sprint("gravity-site:", buildVersion)).
 		CopyToContext(consistentGravityBin(), "/gravity", nil, nil).
 		CopyToContext("assets/site-app/images/site", "/", nil, nil).
-		Build(context.TODO(), "assets/site-app/images/site")
+		Build(ctx, "assets/site-app/images/site")
 	if err != nil {
 		m.Println(trace.DebugReport(err))
 		return trace.Wrap(err)
 	}
 
-	return trace.Wrap(pkgSiteApp.BuildApp())
+	return trace.Wrap(pkgSiteApp.BuildApp(ctx))
 }
 
-func (Package) Monitoring() (err error) {
-	return trace.Wrap(pkgMonitoringApp.BuildApp())
+func (Package) Monitoring(ctx context.Context) (err error) {
+	return trace.Wrap(pkgMonitoringApp.BuildApp(ctx))
 }
 
-func (Package) Logging() (err error) {
-	return trace.Wrap(pkgLoggingApp.BuildApp())
+func (Package) Logging(ctx context.Context) (err error) {
+	return trace.Wrap(pkgLoggingApp.BuildApp(ctx))
 }
 
-func (Package) Ingress() (err error) {
-	return trace.Wrap(pkgIngressApp.BuildApp())
+func (Package) Ingress(ctx context.Context) (err error) {
+	return trace.Wrap(pkgIngressApp.BuildApp(ctx))
 }
 
-func (Package) Storage() (err error) {
-	return trace.Wrap(pkgStorageApp.BuildApp())
+func (Package) Storage(ctx context.Context) (err error) {
+	return trace.Wrap(pkgStorageApp.BuildApp(ctx))
 }
 
-func (Package) Tiller() (err error) {
-	return trace.Wrap(pkgTillerApp.BuildApp())
+func (Package) Tiller(ctx context.Context) (err error) {
+	return trace.Wrap(pkgTillerApp.BuildApp(ctx))
 }
 
-func (Package) Rbac() (err error) {
-	return trace.Wrap(pkgRBAC.BuildApp())
+func (Package) Rbac(ctx context.Context) (err error) {
+	return trace.Wrap(pkgRBAC.BuildApp(ctx))
 }
 
-func (Package) DNS() (err error) {
+func (Package) DNS(ctx context.Context) (err error) {
 	m := root.Target("package:dns:containers")
 	defer func() { m.Complete(err) }()
 
@@ -592,16 +534,16 @@ func (Package) DNS() (err error) {
 		SetBuildArg("CHANGESET", fmt.Sprint("dns-app-", pkgDNSApp.version)).
 		SetPull(true).
 		AddTag(fmt.Sprint("dns-app-hooks:", pkgDNSApp.version)).
-		Build(context.TODO(), "assets/dns-app/hooks")
+		Build(ctx, "assets/dns-app/hooks")
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	return trace.Wrap(pkgDNSApp.BuildApp())
+	return trace.Wrap(pkgDNSApp.BuildApp(ctx))
 }
 
-func (Package) Bandwagon() (err error) {
-	return trace.Wrap(pkgBandwagonApp.BuildApp())
+func (Package) Bandwagon(ctx context.Context) (err error) {
+	return trace.Wrap(pkgBandwagonApp.BuildApp(ctx))
 }
 
 func consistentStateDir() string {
@@ -665,7 +607,7 @@ func (p gravityPackage) Locator() string {
 	return fmt.Sprint(p.repository, "/", p.name, ":", p.version)
 }
 
-func (p gravityPackage) BuildApp() (err error) {
+func (p gravityPackage) BuildApp(ctx context.Context) (err error) {
 	mg.Deps(Build.Go)
 
 	m := root.Target(fmt.Sprint("package:", p.name, ":app"))
@@ -673,7 +615,7 @@ func (p gravityPackage) BuildApp() (err error) {
 
 	if !p.force {
 		var cached bool
-		cached, err = p.IsAppCachedAndSync(m, "")
+		cached, err = p.IsAppCachedAndSync(ctx, m, "")
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -697,12 +639,12 @@ func (p gravityPackage) BuildApp() (err error) {
 	m.Println("  env: ", p.env)
 
 	if p.gitRepo != "" {
-		err = p.buildGit(m)
+		err = p.buildGit(ctx, m)
 		if err != nil {
 			return trace.Wrap(err)
 		}
 	} else {
-		err = p.buildLocal(m)
+		err = p.buildLocal(ctx, m)
 		if err != nil {
 			return trace.Wrap(err)
 		}
@@ -713,7 +655,7 @@ func (p gravityPackage) BuildApp() (err error) {
 		return
 	}
 
-	return trace.Wrap(p.SyncAppToStateDir(m, p.DefaultCachePath()))
+	return trace.Wrap(p.SyncAppToStateDir(ctx, m, p.DefaultCachePath()))
 }
 
 func (p gravityPackage) DefaultCachePath() string {
@@ -724,7 +666,7 @@ func (p gravityPackage) DefaultCachePath() string {
 // IsAppCachedAndSync checks whether the package is available in the cache and if missing syncs to the active state
 // directory.
 // path allows overiding the binary path from the default location.
-func (p gravityPackage) IsAppCachedAndSync(m *magnet.MagnetTarget, path string) (bool, error) {
+func (p gravityPackage) IsAppCachedAndSync(ctx context.Context, m *magnet.MagnetTarget, path string) (bool, error) {
 	if path == "" {
 		path = p.DefaultCachePath()
 	}
@@ -745,14 +687,14 @@ func (p gravityPackage) IsAppCachedAndSync(m *magnet.MagnetTarget, path string) 
 	}
 
 	// we found the cache file, so try and make sure it's in our state directory
-	err = p.SyncAppToStateDir(m, path)
+	err = p.SyncAppToStateDir(ctx, m, path)
 
 	return true, trace.Wrap(err)
 }
 
-func (p gravityPackage) SyncAppToStateDir(m *magnet.MagnetTarget, path string) error {
+func (p gravityPackage) SyncAppToStateDir(ctx context.Context, m *magnet.MagnetTarget, path string) error {
 	if !p.force {
-		packageList, err := magnet.Output(context.TODO(),
+		packageList, err := magnet.Output(ctx,
 			consistentGravityBin(),
 			"--state-dir", consistentStateDir(),
 			"package",
@@ -773,7 +715,7 @@ func (p gravityPackage) SyncAppToStateDir(m *magnet.MagnetTarget, path string) e
 	defer sharedStateMutex.Unlock()
 
 	_, err := m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"app", "delete",
@@ -796,7 +738,7 @@ func (p gravityPackage) SyncAppToStateDir(m *magnet.MagnetTarget, path string) e
 	}
 
 	_, err = m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		args...,
 	)
@@ -804,7 +746,7 @@ func (p gravityPackage) SyncAppToStateDir(m *magnet.MagnetTarget, path string) e
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) buildLocal(m *magnet.MagnetTarget) error {
+func (p gravityPackage) buildLocal(ctx context.Context, m *magnet.MagnetTarget) error {
 	stateDir, err := ioutil.TempDir("", fmt.Sprint("build-app-", p.name))
 	if err != nil {
 		return trace.ConvertSystemError(err)
@@ -812,7 +754,7 @@ func (p gravityPackage) buildLocal(m *magnet.MagnetTarget) error {
 
 	defer os.RemoveAll(stateDir)
 
-	err = p.localAppImport(m, stateDir)
+	err = p.localAppImport(ctx, m, stateDir)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -823,7 +765,7 @@ func (p gravityPackage) buildLocal(m *magnet.MagnetTarget) error {
 	}
 
 	_, err = m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", stateDir,
 		"--debug",
@@ -835,7 +777,7 @@ func (p gravityPackage) buildLocal(m *magnet.MagnetTarget) error {
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
+func (p gravityPackage) buildGit(ctx context.Context, m *magnet.MagnetTarget) error {
 	tmpDir, err := ioutil.TempDir("", fmt.Sprint("build-app-", p.name))
 	if err != nil {
 		return trace.ConvertSystemError(err)
@@ -860,7 +802,7 @@ func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
 		}
 	}
 
-	_, err = m.Exec().SetWD(srcDir).Run(context.TODO(),
+	_, err = m.Exec().SetWD(srcDir).Run(ctx,
 		"git",
 		"clone",
 		p.gitRepo,
@@ -892,9 +834,9 @@ func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
 	}
 
 	if p.name == pkgPlanet.name {
-		_, err = m.Exec().SetWD(srcDir).SetEnvs(envs).Run(context.TODO(), "make", "-f", "Makefile.buildx", "tarball")
+		_, err = m.Exec().SetWD(srcDir).SetEnvs(envs).Run(ctx, "make", "-f", "Makefile.buildx", "tarball")
 	} else {
-		_, err = m.Exec().SetWD(srcDir).SetEnvs(envs).Run(context.TODO(), "make", "import")
+		_, err = m.Exec().SetWD(srcDir).SetEnvs(envs).Run(ctx, "make", "import")
 	}
 	if err != nil {
 		return trace.Wrap(err)
@@ -909,7 +851,7 @@ func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
 	}
 
 	_, err = m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", stateDir,
 		"--debug",
@@ -920,9 +862,9 @@ func (p gravityPackage) buildGit(m *magnet.MagnetTarget) error {
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) localAppImport(m *magnet.MagnetTarget, stateDir string) error {
+func (p gravityPackage) localAppImport(ctx context.Context, m *magnet.MagnetTarget, stateDir string) error {
 	_, err := m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", stateDir,
 		"app", "delete",
@@ -962,7 +904,7 @@ func (p gravityPackage) localAppImport(m *magnet.MagnetTarget, stateDir string) 
 	args = append(args, p.srcDir)
 
 	_, err = m.Exec().SetEnvs(p.env).Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		args...,
 	)
@@ -970,14 +912,14 @@ func (p gravityPackage) localAppImport(m *magnet.MagnetTarget, stateDir string) 
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) ImportPackage(m *magnet.MagnetTarget, path string) error {
+func (p gravityPackage) ImportPackage(ctx context.Context, m *magnet.MagnetTarget, path string) error {
 	// I'm not sure the gravity package store is really protected against concurrent access
 	// so until we're sure, have operations take a lock
 	sharedStateMutex.Lock()
 	defer sharedStateMutex.Unlock()
 
 	_, err := m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"package", "delete",
@@ -989,7 +931,7 @@ func (p gravityPackage) ImportPackage(m *magnet.MagnetTarget, path string) error
 	}
 
 	_, err = m.Exec().Run(
-		context.TODO(),
+		ctx,
 		consistentGravityBin(),
 		"--state-dir", consistentStateDir(),
 		"package", "import",
