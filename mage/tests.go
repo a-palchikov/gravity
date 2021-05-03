@@ -92,6 +92,11 @@ func (Test) Unit() (err error) {
 		SetBuildContainer(buildBoxName()).
 		SetEnv("GO111MODULE", "on").
 		SetMod("vendor").
-		Test(context.TODO(), "./...")
+		Test(context.TODO(),
+			"./lib/...",
+			"./tool/...",
+			"./e/lib/...",
+			"./e/tool/...",
+		)
 	return
 }
