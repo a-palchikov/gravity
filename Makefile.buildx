@@ -1,7 +1,7 @@
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CURRENT_DIR := $(realpath $(patsubst %/,%,$(dir $(MKFILE_PATH))))
 
-BUILDDIR ?= $(realpath _build)
+BUILDDIR := $(addsuffix /_build,$(CURRENT_DIR))
 
 #GOLANG_VER ?= 1.13.8-buster
 # TODO(dima): keep building with stretch as long as centos/7 is supported
@@ -64,7 +64,7 @@ binaries: $(BUILDER)
 	$(BUILDER) build:go
 
 .PHONY: tarball
-tarball:
+tarball: $(BUILDER)
 	$(BUILDER) cluster:gravity
 
 $(BUILDDIR):
@@ -75,7 +75,7 @@ clean:
 	@rm -r $(BUILDDIR)
 
 .PHONY: magnet-vars
-magnet-vars:
+magnet-vars: | $(BUILDDIR)
 	@echo MAGNET_GOLANG_VER=$(GOLANG_VER)
 	@echo MAGNET_FIO_VER=$(FIO_VER)
 	@echo MAGNET_TELEPORT_TAG=$(TELEPORT_TAG)
@@ -101,4 +101,5 @@ magnet-vars:
 	@echo MAGNET_WORMHOLE_IMG=$(WORMHOLE_IMG)
 	@echo MAGNET_BUILD_VERSION=$(GRAVITY_VERSION)
 	@echo MAGNET_CI=$(CI)
+	@echo MAGNET_BUILDDIR=$(BUILDDIR)
 

@@ -1,9 +1,12 @@
 /*
-Copyright 2020 Gravitational, Inc.
+Copyright 2021 Gravitational, Inc.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,8 +18,8 @@ package mage
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/gravitational/magnet"
@@ -27,15 +30,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var env = importEnvFromMakefile()
+
 var root = mustRoot(magnet.Config{
-	Version:       getBuildVersion(),
+	Version:       env.getBuildVersion(),
 	PrintConfig:   true,
-	LogDir:        "_build/logs",
-	BuildDir:      fmt.Sprintf("_build/%s", getBuildVersion()),
-	CacheDir:      "_build/cache",
-	ImportEnv:     importEnvFromMakefile(),
-	PlainProgress: isPlainProgress(),
-})
+	LogDir:        fmt.Sprintf("%s/logs", env.getBuildDir()),
+	CacheDir:      fmt.Sprintf("%s/cache", env.getBuildDir()),
+	ImportEnv:     env,
+	PlainProgress: env.isPlainProgress(),
+}, env.getBuildDir())
 
 var (
 
@@ -284,8 +288,8 @@ func buildFlags() []string {
 	}
 }
 
-func importEnvFromMakefile() (env map[string]string) {
-	env = make(map[string]string)
+func importEnvFromMakefile() (env environ) {
+	env = make(environ)
 	cmd := exec.Command("make", "-f", "Makefile.buildx", "magnet-vars")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -304,19 +308,52 @@ func importEnvFromMakefile() (env map[string]string) {
 	return env
 }
 
-func getBuildVersion() string {
-	return os.Getenv("MAGNET_BUILD_VERSION")
+func (r environ) getBuildDir() string {
+	return r["BUILDDIR"]
 }
 
-func isPlainProgress() bool {
-	return os.Getenv("MAGNET_CI") != ""
+func (r environ) getBuildVersion() string {
+	return r["BUILD_VERSION"]
 }
 
-func mustRoot(config magnet.Config) *magnet.Magnet {
+func (r environ) isPlainProgress() bool {
+	return r["CI"] != ""
+}
+
+type environ map[string]string
+
+func mustRoot(config magnet.Config, buildDir string) *rootTarget {
 	root, err := magnet.Root(config)
 	if err != nil {
 		panic(err.Error())
 	}
 	mg.AddShutdownHook(root.Shutdown)
-	return root
+	return &rootTarget{
+		Magnet:   root,
+		buildDir: buildDir,
+	}
+}
+
+func (r *rootTarget) inVersionedContainerBuildDir(elems ...string) (dir string) {
+	return r.inContainerBuildDir(append([]string{r.Magnet.Version}, elems...)...)
+}
+
+func (r *rootTarget) inVersionedBuildDir(elems ...string) (dir string) {
+	return r.inBuildDir(append([]string{r.Magnet.Version}, elems...)...)
+}
+
+func (r *rootTarget) inContainerBuildDir(elems ...string) (dir string) {
+	baseDir := filepath.Base(r.buildDir)
+	path := append([]string{"/host"}, baseDir)
+	return filepath.Join(append(path, elems...)...)
+}
+
+func (r *rootTarget) inBuildDir(elems ...string) (dir string) {
+	return filepath.Join(append([]string{r.buildDir}, elems...)...)
+}
+
+type rootTarget struct {
+	*magnet.Magnet
+	// buildDir specifies the absolute build directory
+	buildDir string
 }

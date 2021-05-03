@@ -62,7 +62,7 @@ func (Build) Linux() (err error) {
 		SetMod("vendor").
 		AddTag("selinux", "selinux_embed").
 		SetBuildContainer(fmt.Sprint("gravity-build:", buildVersion)).
-		SetOutputPath(consistentBinDir()).
+		SetOutputPath(consistentContainerBinDir()).
 		AddLDFlags(buildFlags()).
 		Build(context.TODO(), packages...)
 
@@ -165,8 +165,7 @@ func (Build) SelinuxPolicy(ctx context.Context) (err error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// TODO(dima): move build directory to configuration
-	cachePath := filepath.Join("_build/apps", fmt.Sprint("selinux.", pkgSelinux.version, ".tar.gz"))
+	cachePath := root.inBuildDir("apps", fmt.Sprint("selinux.", pkgSelinux.version, ".tar.gz"))
 
 	if _, err := os.Stat(cachePath); err == nil {
 		m.SetCached(true)

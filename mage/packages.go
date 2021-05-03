@@ -1,9 +1,12 @@
 /*
-Copyright 2020 Gravitational, Inc.
+Copyright 2021 Gravitational, Inc.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -277,8 +280,7 @@ func (Package) Teleport(ctx context.Context) (err error) {
 	m := root.Target("package:teleport")
 	defer func() { m.Complete(err) }()
 
-	// TODO(dima): move build directory to configuration
-	cachePath := filepath.Join("_build/apps", fmt.Sprint("teleport.", pkgTeleport.version, ".tar.gz"))
+	cachePath := root.inBuildDir("apps", fmt.Sprint("teleport.", pkgTeleport.version, ".tar.gz"))
 
 	_, err = os.Stat(cachePath)
 	if !os.IsNotExist(err) {
@@ -377,13 +379,10 @@ func (Package) Fio(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	wd, _ := os.Getwd()
-
 	err = m.DockerRun().
 		SetRemove(true).
 		AddVolume(magnet.DockerBindMount{
-			// TODO(dima): move build directory to configuration
-			Source:      filepath.Join(wd, "_build/"),
+			Source:      root.buildDir,
 			Destination: "/local",
 		}).
 		Run(ctx, fioImage, "cp", "/gopath/native/fio/fio", filepath.Join("/local", "fio"))
@@ -391,11 +390,9 @@ func (Package) Fio(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	// TODO(dima): move build directory to configuration
-	defer os.Remove("_build/fio")
+	defer os.Remove(root.inBuildDir("fio"))
 
-	// TODO(dima): move build directory to configuration
-	return trace.Wrap(pkgFio.ImportPackage(ctx, m, "_build/fio"))
+	return trace.Wrap(pkgFio.ImportPackage(ctx, m, root.inBuildDir("fio")))
 }
 
 func (Package) Planet(ctx context.Context) (err error) {
@@ -450,15 +447,12 @@ func (Package) Web(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	wd, _ := os.Getwd()
-
 	err = m.DockerRun().
 		SetRemove(true).
 		SetUID(fmt.Sprint(os.Getuid())).
 		SetGID(fmt.Sprint(os.Getgid())).
 		AddVolume(magnet.DockerBindMount{
-			// TODO(dima): move build directory to configuration
-			Source:      filepath.Join(wd, "_build"),
+			Source:      root.buildDir,
 			Destination: "/local",
 		}).
 		Run(ctx, webImage, "cp", "-r", "/web-assets.tar.gz", "/local/")
@@ -466,11 +460,9 @@ func (Package) Web(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	// TODO(dima): move build directory to configuration
-	defer os.Remove("_build/web-assets.tar.gz")
+	defer os.Remove(root.inBuildDir("web-assets.tar.gz"))
 
-	// TODO(dima): move build directory to configuration
-	return trace.Wrap(pkgWebAssets.ImportPackage(ctx, m, "_build/web-assets.tar.gz"))
+	return trace.Wrap(pkgWebAssets.ImportPackage(ctx, m, root.inBuildDir("web-assets.tar.gz")))
 }
 
 func (Package) Site(ctx context.Context) (err error) {
@@ -547,8 +539,7 @@ func (Package) Bandwagon(ctx context.Context) (err error) {
 }
 
 func consistentStateDir() string {
-	// TODO(dima): move build directory to configuration
-	path := filepath.Join("_build", root.Version, "state")
+	path := root.inVersionedBuildDir("state")
 
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
@@ -559,20 +550,15 @@ func consistentStateDir() string {
 }
 
 func osArchBinDir(targetOS, targetArch string) string {
-	// TODO(dima): move build directory to configuration
-	path := filepath.Join("_build", root.Version, fmt.Sprintf("%v-%s", targetOS, targetArch))
+	return root.inVersionedContainerBuildDir(fmt.Sprintf("%v-%s", targetOS, targetArch))
+}
 
-	err := os.MkdirAll(path, 0755)
-	if err != nil {
-		panic(trace.DebugReport(err))
-	}
-
-	return path
+func consistentContainerBinDir() string {
+	return root.inVersionedContainerBuildDir("bin")
 }
 
 func consistentBinDir() string {
-	// TODO(dima): move build root to external configuration
-	path := filepath.Join("_build", root.Version, "bin")
+	path := root.inVersionedBuildDir("bin")
 
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
@@ -583,8 +569,7 @@ func consistentBinDir() string {
 }
 
 func consistentBuildDir() string {
-	// TODO(dima): move build directory to configuration
-	path := filepath.Join("_build", root.Version)
+	path := root.inVersionedBuildDir()
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
 		panic(trace.DebugReport(err))
@@ -594,13 +579,11 @@ func consistentBuildDir() string {
 }
 
 func osArchGravityBin(os, arch string) string {
-	// TODO(dima): move build directory to configuration
-	return filepath.Join("_build", root.Version, fmt.Sprintf("%v-%v/gravity", os, arch))
+	return root.inVersionedBuildDir(fmt.Sprintf("%v-%v/gravity", os, arch))
 }
 
 func consistentGravityBin() string {
-	// TODO(dima): move build directory to configuration
-	return filepath.Join("_build", root.Version, "bin/gravity")
+	return root.inVersionedBuildDir("bin", "gravity")
 }
 
 func (p gravityPackage) Locator() string {
@@ -659,8 +642,7 @@ func (p gravityPackage) BuildApp(ctx context.Context) (err error) {
 }
 
 func (p gravityPackage) DefaultCachePath() string {
-	// TODO(dima): move build directory to configuration
-	return filepath.Join("_build/apps", p.repository, fmt.Sprint(p.name, ".", p.version, ".tar.gz"))
+	return root.inBuildDir("apps", p.repository, fmt.Sprint(p.name, ".", p.version, ".tar.gz"))
 }
 
 // IsAppCachedAndSync checks whether the package is available in the cache and if missing syncs to the active state
@@ -814,13 +796,8 @@ func (p gravityPackage) buildGit(ctx context.Context, m *magnet.MagnetTarget) er
 		return trace.Wrap(err)
 	}
 
-	wd, err := os.Getwd()
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
 	envs := map[string]string{
-		"GRAVITY":  fmt.Sprint(filepath.Join(wd, consistentGravityBin()), " --state-dir ", stateDir),
+		"GRAVITY":  fmt.Sprint(consistentGravityBin(), " --state-dir ", stateDir),
 		"VERSION":  p.version,
 		"OPS_URL":  "",
 		"BUILDDIR": stateDir,

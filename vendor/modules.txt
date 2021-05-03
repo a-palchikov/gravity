@@ -456,7 +456,7 @@ github.com/gravitational/kingpin
 github.com/gravitational/license
 github.com/gravitational/license/authority
 github.com/gravitational/license/constants
-# github.com/gravitational/magnet v0.2.6 => github.com/a-palchikov/magnet v0.2.7-0.20210430145604-714b96f5500a
+# github.com/gravitational/magnet v0.2.6 => github.com/a-palchikov/magnet v0.2.7-0.20210503152541-cd394b346c7d
 github.com/gravitational/magnet
 github.com/gravitational/magnet/pkg/cp
 github.com/gravitational/magnet/pkg/progressui
@@ -627,6 +627,7 @@ github.com/magefile/mage/mage
 github.com/magefile/mage/mg
 github.com/magefile/mage/parse
 github.com/magefile/mage/sh
+github.com/magefile/mage/target
 # github.com/mailgun/lemma v0.0.0-20160211003854-e8b0cd607f58
 github.com/mailgun/lemma/random
 github.com/mailgun/lemma/secret

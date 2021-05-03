@@ -33,3 +33,4 @@ RUN npm run build
 
 # tar up the resulting build
 RUN tar -C /app/dist -czf /web-assets.tar.gz .
+

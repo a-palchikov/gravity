@@ -17,13 +17,18 @@ limitations under the License.
 package mage
 
 import (
-	// "github.com/gravitational/magnet/common"
+	"os"
+
+	"github.com/gravitational/magnet/common"
 
 	"github.com/magefile/mage/mg"
 )
 
 type Help mg.Namespace
 
-func (Help) Envs() {
-	// TODO(dima): dump environment variables
+func (Help) Envs() (err error) {
+	m := root.Target("help:envs")
+	defer func() { m.Complete(err) }()
+
+	return common.WriteEnvs(root.Env(), os.Stdout)
 }

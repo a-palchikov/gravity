@@ -28,7 +28,7 @@ func Clean() (err error) {
 	m := root.Target("build:clean")
 	defer func() { m.Complete(err) }()
 
-	return trace.Wrap(os.RemoveAll("_build"))
+	return trace.Wrap(os.RemoveAll(root.buildDir))
 }
 
 // Env outputs the list of imported environment variables
