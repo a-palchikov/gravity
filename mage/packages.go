@@ -208,7 +208,7 @@ var (
 )
 
 func (Package) Telekube(ctx context.Context) (err error) {
-	mg.Deps(Build.Go, Package.K8s)
+	mg.CtxDeps(ctx, Build.Go, Package.K8s)
 
 	m := root.Target("package:telekube")
 	defer func() { m.Complete(err) }()
@@ -217,8 +217,10 @@ func (Package) Telekube(ctx context.Context) (err error) {
 }
 
 func (Package) K8s(ctx context.Context) (err error) {
-	mg.Deps(Build.Go, Package.Gravity, Package.Teleport, Package.Fio, Package.Planet, Package.Web,
-		Package.Site, Package.Monitoring, Package.Logging, Package.Ingress, Package.Storage, Package.Tiller,
+	mg.CtxDeps(ctx, Build.Go, Package.Gravity, Package.Teleport,
+		Package.Fio, Package.Planet, Package.Web,
+		Package.Site, Package.Monitoring, Package.Logging,
+		Package.Ingress, Package.Storage, Package.Tiller,
 		Package.Rbac, Package.DNS, Package.Bandwagon)
 
 	m := root.Target("package:k8s")
@@ -232,10 +234,10 @@ func (Package) Gravity(ctx context.Context) (err error) {
 	if runtime.GOOS == "darwin" {
 		// Build linux/amd64 gravity binary for packaging
 		binary = osArchGravityBin("linux", "amd64")
-		mg.Deps(Build.Go, Build.LinuxOsArch)
+		mg.CtxDeps(ctx, Build.Go, Build.LinuxOsArch)
 	} else {
 		binary = consistentGravityBin()
-		mg.Deps(Build.Go)
+		mg.CtxDeps(ctx, Build.Go)
 	}
 
 	m := root.Target("package:gravity")
@@ -275,7 +277,7 @@ func (Package) Gravity(ctx context.Context) (err error) {
 }
 
 func (Package) Teleport(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
+	mg.CtxDeps(ctx, Build.Go)
 
 	m := root.Target("package:teleport")
 	defer func() { m.Complete(err) }()
@@ -362,7 +364,7 @@ func (Package) Teleport(ctx context.Context) (err error) {
 }
 
 func (Package) Fio(ctx context.Context) (err error) {
-	mg.Deps(Build.BuildContainer, Build.Go)
+	mg.CtxDeps(ctx, Build.BuildContainer, Build.Go)
 
 	m := root.Target("package:fio")
 	defer func() { m.Complete(err) }()
@@ -396,7 +398,7 @@ func (Package) Fio(ctx context.Context) (err error) {
 }
 
 func (Package) Planet(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
+	mg.CtxDeps(ctx, Build.Go)
 
 	m := root.Target("package:planet")
 	defer func() { m.Complete(err) }()
@@ -430,7 +432,7 @@ func (Package) Planet(ctx context.Context) (err error) {
 }
 
 func (Package) Web(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
+	mg.CtxDeps(ctx, Build.Go)
 
 	m := root.Target("package:web-assets")
 	defer func() { m.Complete(err) }()
@@ -466,7 +468,7 @@ func (Package) Web(ctx context.Context) (err error) {
 }
 
 func (Package) Site(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
+	mg.CtxDeps(ctx, Build.Go)
 
 	m := root.Target("package:site")
 	defer func() { m.Complete(err) }()
@@ -591,7 +593,7 @@ func (p gravityPackage) Locator() string {
 }
 
 func (p gravityPackage) BuildApp(ctx context.Context) (err error) {
-	mg.Deps(Build.Go)
+	mg.CtxDeps(ctx, Build.Go)
 
 	m := root.Target(fmt.Sprint("package:", p.name, ":app"))
 	defer func() { m.Complete(err) }()

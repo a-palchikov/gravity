@@ -39,16 +39,16 @@ func buildBoxName() string {
 	return fmt.Sprint("gravity-build:", buildVersion)
 }
 
-func (r Build) Go() error {
+func (r Build) Go(ctx context.Context) error {
 	if runtime.GOOS == "darwin" {
-		return r.Darwin()
+		return r.Darwin(ctx)
 	}
-	return r.Linux()
+	return r.Linux(ctx)
 }
 
 // Linux builds Go Linux binaries using consistent build environment.
-func (Build) Linux() (err error) {
-	mg.Deps(Build.BuildContainer, Build.Selinux)
+func (Build) Linux(ctx context.Context) (err error) {
+	mg.CtxDeps(ctx, Build.BuildContainer, Build.Selinux)
 
 	m := root.Target("build:go")
 	defer func() { m.Complete(err) }()
@@ -64,15 +64,15 @@ func (Build) Linux() (err error) {
 		SetBuildContainer(fmt.Sprint("gravity-build:", buildVersion)).
 		SetOutputPath(consistentContainerBinDir()).
 		AddLDFlags(buildFlags()).
-		Build(context.TODO(), packages...)
+		Build(ctx, packages...)
 
 	return trace.Wrap(err)
 }
 
 // LinuxOsArch builds Go Linux binaries using consistent build environment and outputs
 // files with os/arch suffix.
-func (Build) LinuxOsArch() (err error) {
-	mg.Deps(Build.BuildContainer, Build.Selinux)
+func (Build) LinuxOsArch(ctx context.Context) (err error) {
+	mg.CtxDeps(ctx, Build.BuildContainer, Build.Selinux)
 
 	m := root.Target("build:go")
 	defer func() { m.Complete(err) }()
@@ -88,13 +88,13 @@ func (Build) LinuxOsArch() (err error) {
 		SetBuildContainer(fmt.Sprint("gravity-build:", buildVersion)).
 		SetOutputPath(osArchBinDir("linux", "amd64")).
 		AddLDFlags(buildFlags()).
-		Build(context.TODO(), packages...)
+		Build(ctx, packages...)
 
 	return trace.Wrap(err)
 }
 
 // Darwin builds Go binaries on the Darwin platform (doesn't support cross compile).
-func (Build) Darwin() (err error) {
+func (Build) Darwin(ctx context.Context) (err error) {
 	m := root.Target("build:darwin")
 	defer func() { m.Complete(err) }()
 
@@ -109,13 +109,16 @@ func (Build) Darwin() (err error) {
 		SetMod("vendor").
 		SetOutputPath(consistentBinDir()).
 		AddLDFlags(buildFlags()).
-		Build(context.TODO(), "github.com/gravitational/gravity/tool/gravity", "github.com/gravitational/gravity/tool/tele")
+		Build(ctx,
+			"github.com/gravitational/gravity/tool/gravity",
+			"github.com/gravitational/gravity/tool/tele",
+		)
 
 	return trace.Wrap(err)
 }
 
 // BuildContainer creates a docker container as a consistent Go environment to use for software builds.
-func (Build) BuildContainer() (err error) {
+func (Build) BuildContainer(ctx context.Context) (err error) {
 	m := root.Target("build:buildContainer")
 	defer func() { m.Complete(err) }()
 
@@ -131,14 +134,14 @@ func (Build) BuildContainer() (err error) {
 		SetBuildArg("UID", fmt.Sprint(os.Getuid())).
 		SetBuildArg("GID", fmt.Sprint(os.Getgid())).
 		SetDockerfile("build.assets/Dockerfile.buildx").
-		Build(context.TODO(), "./build.assets")
+		Build(ctx, "./build.assets")
 
 	return trace.Wrap(err)
 }
 
 // Selinux builds internal selinux code
 func (Build) Selinux(ctx context.Context) (err error) {
-	mg.Deps(Build.SelinuxPolicy)
+	mg.CtxDeps(ctx, Build.SelinuxPolicy)
 
 	m := root.Target("build:selinux")
 	defer func() { m.Complete(err) }()

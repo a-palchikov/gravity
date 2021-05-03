@@ -27,8 +27,8 @@ import (
 type Cluster mg.Namespace
 
 // Gravity builds the reference gravity cluster image.
-func (Cluster) Gravity() (err error) {
-	mg.Deps(Build.Go, Package.Telekube)
+func (Cluster) Gravity(ctx context.Context) (err error) {
+	mg.CtxDeps(ctx, Build.Go, Package.Telekube)
 
 	m := root.Target("cluster:gravity")
 	defer func() { m.Complete(err) }()
@@ -48,8 +48,8 @@ func (Cluster) Gravity() (err error) {
 }
 
 // Wormhole builds the reference gravity cluster image based on wormhole networking.
-func (Cluster) Wormhole() (err error) {
-	mg.Deps(Build.Go, Package.Telekube)
+func (Cluster) Wormhole(ctx context.Context) (err error) {
+	mg.CtxDeps(ctx, Build.Go, Package.Telekube)
 
 	m := root.Target("cluster:wormhole")
 	defer func() { m.Complete(err) }()
