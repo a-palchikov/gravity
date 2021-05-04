@@ -1,6 +1,3 @@
-.vscode
-.vagrant
-.DS_Store
 /build/
 /e/build/
 *.test
@@ -19,3 +16,13 @@ gravity.log
 terraform.tfstate*
 # Ansible retry files
 *.retry
+
+#IDE
+.idea/
+*.ipr
+*.iml
+.vscode
+.DS_Store
+
+#Vagrant
+.vagrant

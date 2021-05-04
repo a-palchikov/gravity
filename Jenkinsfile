@@ -1,9 +1,50 @@
-timestamps {
-  node() {
-    stage('Checkout source') {
-      print 'Running stage Checkout source'
-    }
+#!/usr/bin/env groovy
+pipeline {
+  agent any
+  environment {
+    CI = '1'
   }
+  options {
+    timeout(time: 1, unit: 'HOURS')
+    timestamps()
+    ansiColor('xterm')
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout([
+          $class                           : 'GitSCM',
+          branches                         : scm.branches,
+          doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
+          extensions                       : scm.extensions + [[$class: 'CloneOption', noTags: false, reference: '', shallow: false]],
+          submoduleCfg                     : [],
+          userRemoteConfigs                : scm.userRemoteConfigs
+        ])
+      }
+    }
+
+    stage('unit-test') {
+      steps {
+        echo 'TODO: run unit-tests'
+      }
+    }
+    stage('build') {
+      steps {
+        sh "make production"
+      }
+    }
+    stage('artifacts') {
+      steps {
+        script {
+          def GRAVITY_VERSION = sh(script: 'make --silent get-version', returnStdout: true).trim()
+          archiveArtifacts artifacts: "build/${GRAVITY_VERSION}/*",
+            allowEmptyArchive: false,
+            fingerprint: true,
+            onlyIfSuccessful: true
+        }
+      }
+    } // end stage:artifacts
+  } //end stages
 }
 
 ////
@@ -94,43 +135,6 @@ def robotest() {
       }
     }
   } // end throttle
-}
-
-timestamps {
-  node { ansiColor('xterm') {
-    stage('checkout') {
-      checkout scm
-        sh "git submodule update --init --recursive"
-        sh "sudo git clean -ffdx" // supply -f flag twice to force-remove untracked dirs with .git subdirs (e.g. submodules)
-    }
-    stage('clean') {
-      sh "make -C e clean"
-    }
-    stage('build gravity') {
-      withCredentials([
-          sshUserPrivateKey(credentialsId: '08267d86-0b3a-4101-841e-0036bf780b11', keyFileVariable: 'GITHUB_SSH_KEY'),
-          usernamePassword(credentialsId: 'jenkins-aws-s3', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
-      ]) {
-        sh 'make -C e production telekube opscenter'
-      }
-    }
-  }}
-  node { ansiColor('xterm') {
-    parallel (
-        unittest : {
-          stage("unit test gravity") {
-            withCredentials([
-              sshUserPrivateKey(credentialsId: '08267d86-0b3a-4101-841e-0036bf780b11', keyFileVariable: 'GITHUB_SSH_KEY'),
-            ]) {
-              sh 'make test && make -C e test'
-            }
-          }
-        },
-        robotest : {
-          robotest()
-        }
-    ) // end parallel
-  }} // end ansiColor & node
 }
 */
 ////
