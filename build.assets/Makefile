@@ -96,6 +96,7 @@ RELEASE_TARBALL_NAME := gravity-$(GRAVITY_VERSION)-$(OS)-$(ARCH)-bin.tar.gz
 RELEASE_OUT := $(GRAVITY_BUILDDIR)/$(RELEASE_TARBALL_NAME)
 
 BASH ?= /bin/bash
+GOCOVER=go tool cover
 
 # packages to test
 TEST_PACKAGES ?= $(GRAVITY_PKG_PATH)/lib/... $(GRAVITY_PKG_PATH)/tool/...
@@ -130,13 +131,18 @@ test: buildbox test-etcd
 		-v $(TOP):$(SRCDIR) \
 		-e "GRAVITY_PKG_PATH=$(GRAVITY_PKG_PATH)" \
 		-e "TEST_PACKAGES=$(TEST_PACKAGES)" \
+		-w $(SRCDIR) \
 		-t $(BBOX) \
-		dumb-init make -C $(SRCDIR)/build.assets FLAGS='-cover -race' TEST_ETCD=true TEST_K8S=$(TEST_K8S) test-inside-container
+		dumb-init make -C $(SRCDIR)/build.assets FLAGS='-cover -race -mod=vendor -coverprofile=coverage.out' \
+		TEST_ETCD=true TEST_K8S=$(TEST_K8S) test-inside-container
 
 
 .PHONY: test-inside-container
 test-inside-container:
 	TEST_ETCD=$(TEST_ETCD) TEST_ETCD_CONFIG=$(TEST_ETCD_CONFIG) TEST_K8S=$(TEST_K8S) go test $(TEST_PACKAGES) $(FLAGS)
+	mkdir -p $(SRCDIR)/cover-report/
+	$(GOCOVER) -html=coverage.out -o $(SRCDIR)/cover-report/coverage.html
+
 # TODO: It turns out "go vet" never really worked because we used incorrect package path
 # and now that I've fixed it, it produces a gazillion of warnings. So I'm commenting this
 # out for the time being, should uncomment once we've fixed the warnings.

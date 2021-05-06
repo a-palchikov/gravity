@@ -1,5 +1,6 @@
 /build/
 /e/build/
+cover-report/
 *.test
 flymake*
 *tar
