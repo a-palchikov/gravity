@@ -261,7 +261,7 @@ func (w *RemoteEnvironment) wizardEntry() (*storage.LoginEntry, error) {
 		}
 		for _, entry := range entries {
 			if entry.Email == defaults.WizardUser {
-				found = &entry
+				found = &entry //nolint:exportloopref,gosec
 				break
 			}
 		}
