@@ -1,0 +1,33 @@
+ARG GOLANG_VER=1.16
+FROM --platform=$BUILDPLATFORM golang:${GOLANG_VER}-alpine AS gobase
+
+# xx is a helper for cross-compilation
+FROM --platform=$BUILDPLATFORM tonistiigi/xx@sha256:810dc54d5144f133a218e88e319184bf8b9ce01d37d46ddb37573e90decd9eef AS xx
+
+FROM gobase AS go-linux
+FROM gobase AS go-darwin
+
+FROM go-${TARGETOS} AS gobuild-base
+RUN set -eux && \
+	apk add --no-cache file bash clang lld pkgconfig git make
+COPY --from=xx / /
+
+# target: builder
+FROM gobuild-base AS builder
+ARG VERSION
+ARG TARGETPLATFORM
+ENV \
+	OUTDIR='/out' \
+	GO111MODULE='on'
+WORKDIR /go/src/github.com/gravitational/gravity
+RUN --mount=target=. --mount=target=/root/.cache,type=cache \
+	set -eux && \
+	CGO_ENABLED=0 xx-go build \
+		-mod=vendor \
+		-a -v -x \
+		-ldflags="-s -w -X github.com/gravitational/gravity/version.Version=${VERSION}" \
+	-o ${OUTDIR}/usr/bin/tele ./e/tool/tele
+
+# target: binary
+FROM scratch AS releaser
+COPY --from=builder /out/usr/bin/tele /
