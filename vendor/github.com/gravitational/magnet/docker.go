@@ -250,6 +250,176 @@ func (m *DockerConfigBuild) Build(ctx context.Context, contextPath string) error
 	return trace.Wrap(err)
 }
 
+// DockerBuildx creates a command for building a docker container using buildkit builder.
+func (m *MagnetTarget) DockerBuildx() *DockerConfigBuildx {
+	return &DockerConfigBuildx{
+		DockerConfigCommon: DockerConfigCommon{
+			target: m,
+		},
+		Pull: true,
+	}
+}
+
+// DockerConfigBuildx holds configuration for building docker containers using the buildkit's builder.
+type DockerConfigBuildx struct {
+	DockerConfigCommon
+	// Always attempt to pull a newer version of the same image (Default: true)
+	Pull bool
+	// NoCache indicated to docker to avoid caching the results (Default: false)
+	NoCache bool
+	// Tag Name and optionally a tag in the 'name:tag' format
+	Tag []string
+	// BuildArgs set build-time variables
+	BuildArgs map[string]string
+	// Dockerfile is the path to the Dockerfile to build
+	Dockerfile string
+	// Target sets the target build stage to build
+	Target string
+	// CacheFrom is a list of images to consider as cache sources
+	// https://andrewlock.net/caching-docker-layers-on-serverless-build-hosts-with-multi-stage-builds---target,-and---cache-from/
+	CacheFrom []string
+	CacheTo   []string
+
+	// Output specifies the output destination (format: type=local,dest=path)
+	Output string
+	// Platform specifies the target platform for the build
+	Platform string
+}
+
+// AddTag adds a name and optionally a tag in the 'name:tag' format. Can be added multiple times.
+func (m *DockerConfigBuildx) AddTag(tags ...string) *DockerConfigBuildx {
+	m.Tag = append(m.Tag, tags...)
+	return m
+}
+
+// AddCacheFrom adds an image to consider as a cache source.
+func (m *DockerConfigBuildx) AddCacheFrom(froms ...string) *DockerConfigBuildx {
+	m.CacheFrom = append(m.CacheFrom, froms...)
+	return m
+}
+
+// AddCacheTo adds cache export destination(s)
+func (m *DockerConfigBuildx) AddCacheTo(tos ...string) *DockerConfigBuildx {
+	m.CacheFrom = append(m.CacheFrom, tos...)
+	return m
+}
+
+// SetBuildArg sets a build argument to pass to the build provess.
+func (m *DockerConfigBuildx) SetBuildArg(key, value string) *DockerConfigBuildx {
+	if m.BuildArgs == nil {
+		m.BuildArgs = make(map[string]string)
+	}
+	m.BuildArgs[key] = value
+	return m
+}
+
+// SetEnv sets an environment variable on the docker build command.
+func (m *DockerConfigBuildx) SetEnv(key, value string) *DockerConfigBuildx {
+	if m.Env == nil {
+		m.Env = make(map[string]string)
+	}
+	m.Env[key] = value
+	return m
+}
+
+// SetEnvs sets environmanet variables on the docker build command.
+func (m *DockerConfigBuildx) SetEnvs(envs map[string]string) *DockerConfigBuildx {
+	if m.Env == nil {
+		m.Env = make(map[string]string)
+	}
+	for key, value := range envs {
+		m.Env[key] = value
+	}
+	return m
+}
+
+// SetDockerfile sets the name of the Dockerfile (Default is PATH/Dockerfile).
+func (m *DockerConfigBuildx) SetDockerfile(dockerfile string) *DockerConfigBuildx {
+	m.Dockerfile = dockerfile
+	return m
+}
+
+// SetPull attempts to always pull a newer version of base images.
+func (m *DockerConfigBuildx) SetPull(pull bool) *DockerConfigBuildx {
+	m.Pull = pull
+	return m
+}
+
+// SetNoCache does not use cache when building images.
+func (m *DockerConfigBuildx) SetNoCache(nocache bool) *DockerConfigBuildx {
+	m.NoCache = nocache
+	return m
+}
+
+// SetTarget sets the target build stage to build.
+func (m *DockerConfigBuildx) SetTarget(target string) *DockerConfigBuildx {
+	m.Target = target
+	return m
+}
+
+// SetOutput specifies the output destination
+func (m *DockerConfigBuildx) SetOutput(output string) *DockerConfigBuildx {
+	m.Output = output
+	return m
+}
+
+// SetPlatform specifies the target platform for the build
+func (m *DockerConfigBuildx) SetPlatform(platform string) *DockerConfigBuildx {
+	m.Platform = platform
+	return m
+}
+
+// Build calls docker to build a container image.
+func (m *DockerConfigBuildx) Build(ctx context.Context, contextPath string) error {
+	args := []string{"buildx", "build"}
+
+	if m.Pull {
+		args = append(args, "--pull")
+	}
+
+	if m.NoCache {
+		args = append(args, "--no-cache")
+	}
+
+	if m.Output != "" {
+		args = append(args, "--output", m.Output)
+	}
+
+	if m.Platform != "" {
+		args = append(args, "--platform", m.Platform)
+	}
+
+	if len(m.Target) > 0 {
+		args = append(args, "--target", m.Target)
+	}
+
+	for key, value := range m.BuildArgs {
+		args = append(args, "--build-arg", fmt.Sprint(key, "=", value))
+	}
+
+	for _, value := range m.CacheFrom {
+		args = append(args, "--cache-from", value)
+	}
+
+	for _, value := range m.CacheTo {
+		args = append(args, "--cache-to", value)
+	}
+
+	for _, value := range m.Tag {
+		args = append(args, "--tag", value)
+	}
+
+	if len(m.Dockerfile) > 0 {
+		args = append(args, "--file", m.Dockerfile)
+	}
+
+	args = append(args, contextPath)
+
+	_, err := m.target.Exec().SetEnvs(m.Env).Run(ctx, "docker", args...)
+
+	return trace.Wrap(err)
+}
+
 // DockerBindMount represents a mount point that can be passed when running a docker container
 type DockerBindMount struct {
 	// Type is the docker type [mount(default), volume, tmpfs]

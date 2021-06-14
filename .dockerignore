@@ -3,8 +3,6 @@ _build/
 assets/
 .git
 .vagrant
-lib/
-tool/
 docs/
 build.assets/
 web/

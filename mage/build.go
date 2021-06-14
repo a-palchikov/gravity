@@ -145,12 +145,15 @@ func (Build) TeleDarwin(ctx context.Context) (err error) {
 	mg.Deps(Mkdir(outputPath))
 
 	err = m.DockerBuildx().
-		AddTag(teleBuildBoxName()).
 		SetEnv("GO111MODULE", "on").
 		SetPull(true).
 		// SetBuildArg("GOLANG_VER", golangVersion).
-		SetDockerfile("build.assets/Dockerfile.tele.buildx").
-		Build(ctx, "./build.assets")
+		SetTarget("releaser").
+		SetBuildArg("VERSION", buildVersion).
+		SetDockerfile("Dockerfile.tele.buildx").
+		SetPlatform("darwin/amd64").
+		SetOutput(fmt.Sprintf("type=local,dest=%s", inOsArchContainerBinDir("darwin", "amd64", "tele"))).
+		Build(ctx, ".")
 
 	// err = m.GolangBuild().
 	// 	SetMod("vendor").
