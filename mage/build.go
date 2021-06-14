@@ -99,7 +99,7 @@ func (Build) Linux(ctx context.Context) (err error) {
 		SetMod("vendor").
 		AddTag("selinux", "selinux_embed").
 		SetBuildContainerConfig(magnet.BuildContainer{
-			Name: fmt.Sprint("gravity-build:", buildVersion),
+			Name: buildBoxName(),
 			// In Go module mode we don't need to be in a specific directory
 			ContainerPath: "/host",
 		}).
@@ -131,6 +131,39 @@ func (Build) Darwin(ctx context.Context) (err error) {
 			"github.com/gravitational/gravity/e/tool/gravity",
 			"github.com/gravitational/gravity/e/tool/tele",
 		)
+
+	return trace.Wrap(err)
+}
+
+// TeleDarwin builds 'tele' inside the multiarch build container for darwin
+func (Build) TeleDarwin(ctx context.Context) (err error) {
+	m := root.Target("build:teledarwin")
+	defer func() { m.Complete(err) }()
+
+	// TODO(dima): avoid hard-coding platform
+	outputPath := inOsArchBinDir("darwin", "amd64")
+	mg.Deps(Mkdir(outputPath))
+
+	err = m.DockerBuildx().
+		AddTag(teleBuildBoxName()).
+		SetEnv("GO111MODULE", "on").
+		SetPull(true).
+		// SetBuildArg("GOLANG_VER", golangVersion).
+		SetDockerfile("build.assets/Dockerfile.tele.buildx").
+		Build(ctx, "./build.assets")
+
+	// err = m.GolangBuild().
+	// 	SetMod("vendor").
+	// 	SetBuildContainerConfig(magnet.BuildContainer{
+	// 		Name: teleBuildBoxName(),
+	// 		// In Go module mode we don't need to be in a specific directory
+	// 		ContainerPath: "/host",
+	// 	}).
+	// 	SetOutputPath(inOsArchContainerBinDir("darwin", "amd64")).
+	// 	AddLDFlags(buildFlags()).
+	// 	Build(ctx,
+	// 		"github.com/gravitational/gravity/e/tool/tele",
+	// 	)
 
 	return trace.Wrap(err)
 }
