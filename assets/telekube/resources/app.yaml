@@ -54,21 +54,6 @@ installer:
         nodes:
           - profile: node
             count: 4
-      - name: "five"
-        description: "5 nodes"
-        nodes:
-          - profile: node
-            count: 5
-      - name: "six"
-        description: "6 nodes"
-        nodes:
-          - profile: node
-            count: 6
-      - name: "cloud"
-        description: "cloud install"
-        nodes:
-          - profile: gmaster
-            count: 1
 nodeProfiles:
   - name: node
     description: "Gravity Auto Node"
@@ -83,29 +68,13 @@ nodeProfiles:
         - name: rhel
           versions: ["7", "8"]
         - name: ubuntu
-          versions: ["16.04", "18.04"]
-        - name: ubuntu-core
-          versions: ["16"]
+          versions: ["16.04", "18.04", "20"]
         - name: debian
-          versions: ["9"]
-        - name: suse
-          versions: ["12"]
-        - name: sles  # Suse Linux Enterprise Server
-          versions: ["12"]
-        - name: amz
-          versions: ["2"]
+          versions: ["9", "10"]
       volumes:
         - path: /var/lib/gravity
           capacity: "10GB"
           filesystems: ["xfs", "ext4"]
-    providers:
-      aws:
-        instanceTypes:
-          - m4.xlarge
-          - c3.xlarge
-          - c3.2xlarge
-          - c3.4xlarge
-          - i2.2xlarge
   - name: knode
     description: "Gravity Node"
     labels:
@@ -121,31 +90,13 @@ nodeProfiles:
         - name: rhel
           versions: ["7", "8"]
         - name: ubuntu
-          versions: ["16.04", "18.04"]
-        - name: ubuntu-core
-          versions: ["16"]
+          versions: ["16.04", "18.04", "20"]
         - name: debian
-          versions: ["8", "9"]
-        - name: suse
-          versions: ["12"]
-        - name: sles  # Suse Linux Enterprise Server
-          versions: ["12"]
-        - name: amz
-          versions: ["2"]
+          versions: ["8", "9", "10"]
       volumes:
         - path: /var/lib/gravity
           capacity: "10GB"
           filesystems: ["xfs", "ext4"]
-    providers:
-      aws:
-        instanceTypes:
-          - m3.xlarge
-          - m4.large
-          - m4.xlarge
-          - c3.xlarge
-          - c3.2xlarge
-          - c3.4xlarge
-          - i2.2xlarge
   - name: master
     description: "Gravity Master"
     taints:
@@ -164,31 +115,13 @@ nodeProfiles:
         - name: rhel
           versions: ["7", "8"]
         - name: ubuntu
-          versions: ["16.04", "18.04"]
-        - name: ubuntu-core
-          versions: ["16"]
+          versions: ["16.04", "18.04", "20"]
         - name: debian
-          versions: ["8", "9"]
-        - name: suse
-          versions: ["12"]
-        - name: sles  # Suse Linux Enterprise Server
-          versions: ["12"]
-        - name: amz
-          versions: ["2"]
+          versions: ["8", "9", "10"]
       volumes:
         - path: /var/lib/gravity
           capacity: "10GB"
           filesystems: ["xfs", "ext4"]
-    providers:
-      aws:
-        instanceTypes:
-          - m3.xlarge
-          - m4.large
-          - m4.xlarge
-          - c3.xlarge
-          - c3.2xlarge
-          - c3.4xlarge
-          - i2.2xlarge
   - name: gmaster
     description: "Gravity Master (not kubernetes master)"
     taints:
