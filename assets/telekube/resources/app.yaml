@@ -12,9 +12,6 @@ endpoints:
     selector:
       app: gravity-site
     protocol: https
-  - name: "Bandwagon"
-    hidden: true
-    serviceName: bandwagon
 providers:
   aws:
     regions:
@@ -54,6 +51,21 @@ installer:
         nodes:
           - profile: node
             count: 4
+      - name: "five"
+        description: "5 nodes"
+        nodes:
+          - profile: node
+            count: 5
+      - name: "six"
+        description: "6 nodes"
+        nodes:
+          - profile: node
+            count: 6
+      - name: "cloud"
+        description: "cloud install"
+        nodes:
+          - profile: gmaster
+            count: 1
 nodeProfiles:
   - name: node
     description: "Gravity Auto Node"
@@ -137,9 +149,16 @@ ingress:
     enabled: true
 storage:
   openebs:
-    enabled: true
+    enabled: false
 systemOptions:
   runtime:
     version: "0.0.0+latest"
   docker:
     storageDriver: overlay2
+extensions:
+  logs:
+    disabled: true
+  monitoring:
+    disabled: true
+  catalog:
+    disabled: true

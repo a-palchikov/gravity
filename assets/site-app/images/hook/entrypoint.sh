@@ -39,8 +39,8 @@ if [ $1 = "update" ]; then
     rig freeze
 elif [ $1 = "rollback" ]; then
     echo "Reverting changeset $RIG_CHANGESET"
-    rig revert
-    rig cs delete --force -c cs/$RIG_CHANGESET
+    rig revert --debug
+    rig cs delete --debug --force -c cs/$RIG_CHANGESET
 else
     echo "Missing argument, should be either 'update' or 'rollback'"
 fi

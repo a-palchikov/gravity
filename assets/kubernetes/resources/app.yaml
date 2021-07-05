@@ -77,7 +77,6 @@ dependencies:
   apps:
     - gravitational.io/rbac-app:0.0.0
     - gravitational.io/dns-app:0.0.0
-    - gravitational.io/bandwagon:0.0.0
     - gravitational.io/site:0.0.0
 systemOptions:
   dependencies:
