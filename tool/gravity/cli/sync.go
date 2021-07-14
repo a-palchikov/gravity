@@ -19,7 +19,7 @@ package cli
 import (
 	"context"
 
-	"github.com/gravitational/gravity/lib/app/service"
+	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/docker"
 	"github.com/gravitational/gravity/lib/httplib"
 	"github.com/gravitational/gravity/lib/localenv"
@@ -110,13 +110,13 @@ func appSyncEnv(env *localenv.LocalEnvironment, imageEnv *localenv.ImageEnvironm
 			if err != nil {
 				return trace.Wrap(err)
 			}
-			err = service.SyncApp(context.TODO(), service.SyncRequest{
+			syncer := libapp.Syncer{
 				PackService:  imageEnv.Packages,
 				AppService:   imageEnv.Apps,
 				ImageService: imageService,
-				Package:      imageEnv.Manifest.Locator(),
 				Progress:     env,
-			})
+			}
+			err = syncer.SyncApp(context.TODO(), imageEnv.Manifest.Locator())
 			if err != nil {
 				return trace.Wrap(err)
 			}
@@ -130,17 +130,14 @@ func appSyncEnv(env *localenv.LocalEnvironment, imageEnv *localenv.ImageEnvironm
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		_, err = service.PullApp(service.AppPullRequest{
+		puller := libapp.Puller{
 			SrcPack: imageEnv.Packages,
 			DstPack: clusterPackages,
 			SrcApp:  imageEnv.Apps,
 			DstApp:  clusterApps,
-			Package: imageEnv.Manifest.Locator(),
 			Upsert:  true,
-		})
-		if err != nil {
-			return trace.Wrap(err)
 		}
+		return puller.PullApp(context.TODO(), imageEnv.Manifest.Locator())
 	} else {
 		// sync images to the registry specified on the command line.
 		env.PrintStep("Pushing application images to Docker registry %v", conf.Registry)
@@ -148,17 +145,13 @@ func appSyncEnv(env *localenv.LocalEnvironment, imageEnv *localenv.ImageEnvironm
 		if err != nil {
 			return trace.Wrap(err)
 		}
-
-		err = service.SyncApp(context.TODO(), service.SyncRequest{
+		syncer := libapp.Syncer{
 			PackService:  imageEnv.Packages,
 			AppService:   imageEnv.Apps,
 			ImageService: imageService,
-			Package:      imageEnv.Manifest.Locator(),
 			Progress:     env,
-		})
-		if err != nil {
-			return trace.Wrap(err)
 		}
+		return syncer.SyncApp(context.TODO(), imageEnv.Manifest.Locator())
 	}
 	return nil
 }

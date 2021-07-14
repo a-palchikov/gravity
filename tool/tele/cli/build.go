@@ -48,6 +48,8 @@ type BuildParameters struct {
 	Vendor service.VendorRequest
 	// BaseImage sets base image for the cluster image
 	BaseImage string
+	// UpgradeVia lists intermediate runtime versions to embed inside the installer
+	UpgradeVia []string
 }
 
 // Level returns level at which the progress should be reported based on the CLI parameters.
@@ -83,6 +85,7 @@ func buildClusterImage(ctx context.Context, params BuildParameters) error {
 		Overwrite:  params.Overwrite,
 		BaseImage:  params.BaseImage,
 		Vendor:     params.Vendor,
+		UpgradeVia:       params.UpgradeVia,
 	})
 }
 

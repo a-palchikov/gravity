@@ -18,6 +18,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"time"
 
@@ -63,25 +64,24 @@ func (s *PullerSuite) TestPullPackage(c *C) {
 	_, err := s.srcPack.CreatePackage(loc, bytes.NewBuffer([]byte("data")))
 	c.Assert(err, IsNil)
 
-	env, err := PullPackage(PackagePullRequest{
+	puller := app.Puller{
 		FieldLogger: logger,
 		SrcPack:     s.srcPack,
 		DstPack:     s.dstPack,
-		Package:     loc,
-	})
+	}
+	err = puller.PullPackage(context.TODO(), loc)
+	c.Assert(err, IsNil)
+
+	env, err := s.dstPack.ReadPackageEnvelope(loc)
 	c.Assert(err, IsNil)
 	c.Assert(env.Locator, Equals, loc)
 
-	env, err = s.dstPack.ReadPackageEnvelope(loc)
-	c.Assert(err, IsNil)
-	c.Assert(env.Locator, Equals, loc)
-
-	_, err = PullPackage(PackagePullRequest{
+	puller = app.Puller{
 		FieldLogger: logger,
 		SrcPack:     s.srcPack,
 		DstPack:     s.dstPack,
-		Package:     loc,
-	})
+	}
+	err = puller.PullPackage(context.TODO(), loc)
 	c.Assert(trace.IsAlreadyExists(err), Equals, true)
 }
 
@@ -113,14 +113,15 @@ func (s *PullerSuite) pullApp(c *C, parallel int) {
 		Packages: s.dstPack,
 	}, c)
 
-	pulled, err := PullApp(AppPullRequest{
+	puller := app.Puller{
 		SrcPack:  s.srcPack,
 		DstPack:  s.dstPack,
 		SrcApp:   s.srcApp,
 		DstApp:   s.dstApp,
-		Package:  clusterAppLoc,
+		Upsert:   true, // TODO(dima): check, b/c not in upstream
 		Parallel: parallel,
-	})
+	}
+	err := puller.PullApp(context.TODO(), clusterAppLoc)
 	c.Assert(err, IsNil)
 	c.Assert(pulled.Package, Equals, clusterAppLoc)
 
@@ -137,14 +138,14 @@ func (s *PullerSuite) pullApp(c *C, parallel int) {
 	c.Assert(err, IsNil)
 	c.Assert(local.Package, Equals, clusterAppLoc)
 
-	_, err = PullApp(AppPullRequest{
+	puller = app.Puller{
 		SrcPack:  s.srcPack,
 		DstPack:  s.dstPack,
 		SrcApp:   s.srcApp,
 		DstApp:   s.dstApp,
-		Package:  clusterAppLoc,
 		Parallel: parallel,
-	})
+	}
+	err = puller.PullApp(context.TODO(), clusterAppLoc)
 	c.Assert(trace.IsAlreadyExists(err), Equals, true)
 }
 

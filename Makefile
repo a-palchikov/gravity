@@ -507,6 +507,12 @@ scan-artifacts: $(TELEKUBE_OUT)
 .PHONY: telekube
 telekube: $(TELEKUBE_OUT)
 
+# TODO(dima): check this
+.PHONY: telekube-intermediate-upgrade
+telekube-intermediate-upgrade: GRAVITY=$(GRAVITY_OUT) --state-dir=$(PACKAGES_DIR)
+telekube-intermediate-upgrade: GRAVITY_INSTALLER_OPTIONS=--upgrade-via=$(GRAVITY_INTERMEDIATE_RELEASE)
+telekube-intermediate-upgrade: $(TELEKUBE_OUT)
+
 $(TELEKUBE_OUT): GRAVITY=$(GRAVITY_OUT) --state-dir=$(PACKAGES_DIR)
 $(TELEKUBE_OUT): packages
 	GRAVITY_K8S_VERSION=$(K8S_VER) $(GRAVITY_BUILDDIR)/tele build \

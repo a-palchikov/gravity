@@ -84,14 +84,8 @@ type SetPhaseParams struct {
 
 // resumeOperation resumes the operation specified with params
 func resumeOperation(localEnv *localenv.LocalEnvironment, environ LocalEnvironmentFactory, params PhaseParams) error {
-	err := executePhase(localEnv, environ, PhaseParams{
-		PhaseID:          fsm.RootPhase,
-		Force:            params.Force,
-		Timeout:          params.Timeout,
-		SkipVersionCheck: params.SkipVersionCheck,
-		OperationID:      params.OperationID,
-		Block:            params.Block,
-	})
+	params.PhaseID = fsm.RootPhase
+	err := executePhase(localEnv, environ, params)
 	if err == nil {
 		return nil
 	}
