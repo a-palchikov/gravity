@@ -58,10 +58,6 @@ type BuildCmd struct {
 	CACert *string
 	// EncryptionKey allows to encrypt installer tarball
 	EncryptionKey *string
-	// Repository is where packages are downloaded from
-	//
-	// TODO(r0mant): This flag is DEPRECATED and replaced by --hub.
-	Repository *string
 }
 
 // LoginCmd logs into specified Ops Center and cluster

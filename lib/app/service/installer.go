@@ -46,6 +46,7 @@ import (
 )
 
 func (r *Applications) getApplicationInstaller(
+	req appservice.InstallerRequest,
 	app appservice.Application,
 	apps *Applications,
 ) error {
@@ -161,7 +162,7 @@ func (r *Applications) GetAppInstaller(req appservice.InstallerRequest) (install
 	case schema.KindBundle, schema.KindCluster:
 		items, err = r.getClusterInstaller(req, *app, localApps)
 	case schema.KindApplication:
-		err = r.getApplicationInstaller(*app, localApps)
+		err = r.getApplicationInstaller(req, *app, localApps)
 	default:
 		return nil, trace.BadParameter("unsupported kind %q",
 			app.Manifest.Kind)

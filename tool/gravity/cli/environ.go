@@ -69,7 +69,7 @@ func newEnvironUpdater(ctx context.Context, localEnv, updateEnv *localenv.LocalE
 	init := environInitializer{
 		environ: environ,
 	}
-	return newUpdater(ctx, localEnv, updateEnv, init, nil)
+	return newUpdater(ctx, localEnv, updateEnv, init)
 }
 
 func executeEnvironPhaseForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, params PhaseParams, operation ops.SiteOperation) error {
@@ -176,10 +176,6 @@ func getEnvironUpdater(env, updateEnv *localenv.LocalEnvironment, operation ops.
 	return updater, nil
 }
 
-func (r environInitializer) validatePreconditions(*localenv.LocalEnvironment, ops.Operator, ops.Site) error {
-	return nil
-}
-
 func (r environInitializer) newOperation(operator ops.Operator, cluster ops.Site) (*ops.SiteOperationKey, error) {
 	key, err := operator.CreateUpdateEnvarsOperation(context.TODO(),
 		ops.CreateUpdateEnvarsOperationRequest{
@@ -206,7 +202,6 @@ func (environInitializer) newOperationPlan(
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	clusterEnv *localenv.ClusterEnvironment,
 	leader *storage.Server,
-	userConfig interface{},
 ) (*storage.OperationPlan, error) {
 	plan, err := environ.NewOperationPlan(ctx, operator, clusterEnv.Apps, operation, cluster.ClusterState.Servers)
 	if err != nil {

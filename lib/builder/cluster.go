@@ -25,7 +25,6 @@ import (
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/schema"
-
 	"github.com/gravitational/trace"
 )
 
@@ -60,7 +59,7 @@ type ClusterRequest struct {
 
 // Build builds a cluster image according to the provided parameters.
 func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
-	imageSource, err := GetClusterImageSource(req.SourcePath)
+	imageSource, err := GetClusterImageSource(req.SourcePath, b.engine.Logger)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -96,11 +95,10 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = b.engine.SyncPackageCache(ctx, manifest, runtimeVersion)
+	manifestWithRuntime := manifest.WithBase(loc.Runtime.WithVersion(*runtimeVersion))
+	app := app(locator, manifestWithRuntime)
+	err = b.engine.SyncPackageCache(ctx, app)
 	if err != nil {
-		if trace.IsNotFound(err) {
-			return trace.NotFound("base image version %v not found", runtimeVersion)
-		}
 		return trace.Wrap(err)
 	}
 
@@ -129,7 +127,7 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	}
 
 	b.engine.NextStep("Packaging cluster image")
-	installer, err := b.engine.GenerateInstaller(manifest, *application)
+	installer, err := b.engine.GenerateInstaller(*manifest, *application)
 	if err != nil {
 		return trace.Wrap(err)
 	}

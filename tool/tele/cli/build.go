@@ -18,10 +18,14 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gravitational/gravity/lib/app/service"
 	"github.com/gravitational/gravity/lib/builder"
+	"github.com/gravitational/gravity/lib/defaults"
+	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/utils"
+	"github.com/sirupsen/logrus"
 
 	"github.com/gravitational/trace"
 )
@@ -48,31 +52,53 @@ type BuildParameters struct {
 	Vendor service.VendorRequest
 	// BaseImage sets base image for the cluster image
 	BaseImage string
+	// UpgradeVia lists intermediate runtime versions to embed inside the installer
+	UpgradeVia []string
 }
 
-// Level returns level at which the progress should be reported based on the CLI parameters.
-func (p BuildParameters) Level() utils.ProgressLevel {
+// Progress creates the progress based on the CLI parameters.
+func (p BuildParameters) Progress(ctx context.Context) utils.Progress {
+	// Normal output.
+	level := utils.ProgressLevelInfo
 	if p.Silent { // No output.
-		return utils.ProgressLevelNone
+		level = utils.ProgressLevelNone
 	} else if p.Verbose { // Detailed output.
-		return utils.ProgressLevelDebug
+		level = utils.ProgressLevelDebug
 	}
-	return utils.ProgressLevelInfo // Normal output.
+	return utils.NewProgressWithConfig(ctx, "Build", utils.ProgressConfig{
+		Level:       level,
+		StepPrinter: utils.TimestampedStepPrinter,
+	})
 }
 
 // BuilderConfig makes builder config from CLI parameters.
-func (p BuildParameters) BuilderConfig() builder.Config {
+func (p BuildParameters) BuilderConfig(ctx context.Context) builder.Config {
 	return builder.Config{
 		StateDir:         p.StateDir,
 		Insecure:         p.Insecure,
 		SkipVersionCheck: p.SkipVersionCheck,
 		Parallel:         p.Vendor.Parallel,
-		Level:            p.Level(),
+		Progress:         p.Progress(ctx),
+		UpgradeVia:       p.UpgradeVia,
 	}
 }
 
 func buildClusterImage(ctx context.Context, params BuildParameters) error {
-	clusterBuilder, err := builder.NewClusterBuilder(params.BuilderConfig())
+	syncer, err := builder.NewS3Syncer()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	logger := logrus.WithField(trace.Component, "builder")
+	env, err := params.newBuildEnviron(logger)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	builderConfig := params.BuilderConfig(ctx)
+	builderConfig.Repository = getRepository()
+	builderConfig.Syncer = syncer
+	builderConfig.Env = env
+	builderConfig.Logger = logger
+	clusterBuilder, err := builder.NewClusterBuilder(builderConfig)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -87,7 +113,7 @@ func buildClusterImage(ctx context.Context, params BuildParameters) error {
 }
 
 func buildApplicationImage(ctx context.Context, params BuildParameters) error {
-	appBuilder, err := builder.NewApplicationBuilder(params.BuilderConfig())
+	appBuilder, err := builder.NewApplicationBuilder(params.BuilderConfig(ctx))
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -98,4 +124,33 @@ func buildApplicationImage(ctx context.Context, params BuildParameters) error {
 		Overwrite:  params.Overwrite,
 		Vendor:     params.Vendor,
 	})
+}
+
+func (p BuildParameters) newBuildEnviron(logger logrus.FieldLogger) (*localenv.LocalEnvironment, error) {
+	// if state directory was specified explicitly, it overrides
+	// both cache directory and config directory as it's used as
+	// a special case only for building from local packages
+	if p.StateDir != "" {
+		logger.Infof("Using package cache from %v.", p.StateDir)
+		return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+			StateDir:         p.StateDir,
+			LocalKeyStoreDir: p.StateDir,
+			Insecure:         p.Insecure,
+		})
+	}
+	// otherwise use default locations for cache / key store
+	cacheDir, err := builder.EnsureCacheDir(getRepository())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	logger.Infof("Using package cache from %v.", cacheDir)
+	return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+		StateDir: cacheDir,
+		Insecure: p.Insecure,
+	})
+}
+
+// getRepository returns the default package source repository
+func getRepository() string {
+	return fmt.Sprintf("s3://%v", defaults.HubBucket)
 }

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -ex
+
+upgrade_via_version=${1:?"specify the version for intermediate upgrade"}
+this_version=${2:-$(make get-version)}
+
+gravity_from() {
+  _build/${this_version}/bin/gravity --state-dir=_build/${upgrade_via_version}/state "$@"
+}
+
+gravity_to() {
+  _build/${this_version}/bin/gravity --state-dir=_build/${this_version}/state "$@"
+}
+
+workdir=$(mktemp --directory)
+trap "rm -r ${workdir}" EXIT
+
+import-packages() {
+  gravity_to app pull \
+    --from=file://_build/${upgrade_via_version}/state \
+    --force \
+    --labels intermediate-upgrade:${upgrade_via_version} \
+    gravitational.io/kubernetes:${upgrade_via_version}
+}
+
+echo "expected state: some version via ${upgrade_via_version} to ${this_version}"
+mkdir -p _build/${upgrade_via_version}/state
+import-packages

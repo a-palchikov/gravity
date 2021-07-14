@@ -50,15 +50,6 @@ func Run(tele Application) error {
 
 	switch cmd {
 	case tele.BuildCmd.FullCommand():
-		hub := *tele.Hub
-		if hub == "" {
-			hub = *tele.BuildCmd.Repository
-			if hub != "" {
-				common.PrintWarn("Flag --repository is obsolete " +
-					"and will be removed in future version, " +
-					"please use --hub instead.")
-			}
-		}
 		credentials, err := tele.cliCredentials()
 		if err != nil && !trace.IsNotFound(err) {
 			return trace.Wrap(err)
@@ -74,6 +65,7 @@ func Run(tele Application) error {
 				Verbose:          *tele.BuildCmd.Verbose,
 				BaseImage:        *tele.BuildCmd.BaseImage,
 				Insecure:         *tele.Insecure,
+				UpgradeVia:       *tele.BuildCmd.UpgradeVia,
 				Vendor: service.VendorRequest{
 					PackageName:            *tele.BuildCmd.Name,
 					PackageVersion:         *tele.BuildCmd.Version,

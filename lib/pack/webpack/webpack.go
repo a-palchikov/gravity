@@ -267,7 +267,7 @@ func (s *Server) createPackage(w http.ResponseWriter, r *http.Request, p httprou
 		}
 	}()
 
-	loc, err := loc.ParseLocator(files[0].Name())
+	loc, err := loc.ParseLocator(files[0].Header()["X-Gravity-Package"][0])
 	if err != nil {
 		return trace.BadParameter(err.Error())
 	}

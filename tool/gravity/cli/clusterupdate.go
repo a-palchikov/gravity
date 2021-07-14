@@ -29,6 +29,7 @@ import (
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/defaults"
 	libfsm "github.com/gravitational/gravity/lib/fsm"
+	"github.com/gravitational/gravity/lib/install"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/ops"
@@ -42,18 +43,19 @@ import (
 	"github.com/gravitational/gravity/lib/systemservice"
 	"github.com/gravitational/gravity/lib/update"
 	clusterupdate "github.com/gravitational/gravity/lib/update/cluster"
+	"github.com/gravitational/gravity/lib/update/cluster/versions"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/gravity/lib/utils/cli"
 	"github.com/gravitational/gravity/lib/utils/helm"
-	"github.com/gravitational/version"
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/fatih/color"
 	"github.com/ghodss/yaml"
 	"github.com/gravitational/trace"
+	"github.com/gravitational/version"
 )
 
-func updateCheck(env *localenv.LocalEnvironment, updatePackage string) error {
+func updateCheck(env *localenv.LocalEnvironment, updatePackagePattern string) error {
 	operator, err := env.SiteOperator()
 	if err != nil {
 		return trace.Wrap(err)
@@ -64,7 +66,16 @@ func updateCheck(env *localenv.LocalEnvironment, updatePackage string) error {
 		return trace.Wrap(err)
 	}
 
-	_, err = checkForUpdate(env, cluster.App.Package, updatePackage)
+	var args localenv.TarballEnvironmentArgs
+	if cluster.License != nil {
+		args.License = cluster.License.Raw
+	}
+	updateLoc, err := getUpdatePackage(args, updatePackagePattern, cluster.App.Package)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	_, err = checkForUpdate(env, *cluster, *updateLoc)
 	return trace.Wrap(err)
 }
 
@@ -127,7 +138,7 @@ func updateTrigger(localEnv, updateEnv *localenv.LocalEnvironment, config upgrad
 		// The cluster is updating in background
 		return nil
 	}
-	localEnv.Println(updateClusterManualOperationBanner)
+	localEnv.Printf(updateClusterManualOperationBanner, updater.Operation.ID)
 	return nil
 }
 
@@ -135,19 +146,20 @@ func newClusterUpdater(
 	ctx context.Context,
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	config upgradeConfig,
-) (updater, error) {
+) (*update.Updater, error) {
 	init := &clusterInitializer{
 		updatePackage: config.upgradePackage,
 		unattended:    !config.manual,
 		values:        config.values,
 		force:         config.force,
+		userConfig:    config.userConfig,
 	}
 
 	if err := checkStatus(ctx, localEnv, config.force); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	updater, err := newUpdater(ctx, localEnv, updateEnv, init, &config.userConfig)
+	updater, err := newUpdater(ctx, localEnv, updateEnv, init)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -367,13 +379,24 @@ func setUpdatePhaseForOperation(env *localenv.LocalEnvironment, environ LocalEnv
 	return updater.SetPhase(context.TODO(), params.PhaseID, params.State)
 }
 
-func completeUpdatePlanForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, operation ops.SiteOperation) error {
+func completeUpdatePlanForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, operation clusterOperation) error {
+	clusterEnv, err := env.NewClusterEnvironment()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if isInvalidOperation(operation) {
+		log.WithField("op", operation.SiteOperation.String()).Warn("Operation is invalid, activate cluster directly.")
+		return clusterEnv.Operator.ActivateSite(ops.ActivateSiteRequest{
+			AccountID:  operation.SiteOperation.AccountID,
+			SiteDomain: operation.SiteOperation.SiteDomain,
+		})
+	}
 	updateEnv, err := environ.NewUpdateEnv()
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	defer updateEnv.Close()
-	updater, err := getClusterUpdater(env, updateEnv, operation, true)
+	updater, err := getClusterUpdater(env, updateEnv, operation.SiteOperation, true)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -429,15 +452,36 @@ func getClusterUpdater(localEnv, updateEnv *localenv.LocalEnvironment, operation
 	return updater, nil
 }
 
-func (r *clusterInitializer) validatePreconditions(localEnv *localenv.LocalEnvironment, operator ops.Operator, cluster ops.Site) error {
-	updateApp, err := checkForUpdate(localEnv, cluster.App.Package, r.updatePackage)
+// validate validates preconditions for the cluster upgrade.
+// implements validator
+func (r *clusterInitializer) validate(localEnv *localenv.LocalEnvironment, clusterEnv *localenv.ClusterEnvironment, cluster ops.Site) error {
+	var args localenv.TarballEnvironmentArgs
+	if cluster.License != nil {
+		args.License = cluster.License.Raw
+	}
+	updateLoc, err := getUpdatePackage(args, r.updatePackage, cluster.App.Package)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	if err := checkCanUpdate(cluster); err != nil {
+	updateApp, err := checkForUpdate(localEnv, cluster, *updateLoc)
+	if err != nil {
 		return trace.Wrap(err)
 	}
-	if err := r.checkRuntimeEnvironment(localEnv, cluster, operator); err != nil {
+	installedRuntimeAppVersion, err := getRuntimeAppVersion(clusterEnv.Apps, cluster.App.Package)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	updateRuntimeAppVersion, err := getRuntimeAppVersion(clusterEnv.Apps, updateApp.Package)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if err := checkCanUpdate(clusterEnv.ClusterPackages, installedRuntimeAppVersion, updateRuntimeAppVersion); err != nil {
+		if !r.force {
+			return trace.Wrap(err)
+		}
+		log.WithError(err).Info("Unsupported update path overridden with force.")
+	}
+	if err := r.checkRuntimeEnvironment(localEnv, cluster, clusterEnv.Operator); err != nil {
 		return trace.Wrap(err)
 	}
 	r.updateLoc = updateApp.Package
@@ -497,23 +541,9 @@ func (r clusterInitializer) newOperationPlan(
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	clusterEnv *localenv.ClusterEnvironment,
 	leader *storage.Server,
-	userConfig interface{},
 ) (*storage.OperationPlan, error) {
-	var uc clusterupdate.UserConfig
-	if userConfig != nil {
-		c, ok := userConfig.(*clusterupdate.UserConfig)
-		if !ok {
-			// BUG: the passed in config is not of the expected type
-			// log and act as if not configured.
-			log.WithError(trace.BadParameter("unexpected userConfig")).Warn("BUG: passed in user config is not the expected type")
-		}
-		if c != nil {
-			uc = *c
-		}
-	}
-
 	plan, err := clusterupdate.InitOperationPlan(
-		ctx, localEnv, updateEnv, clusterEnv, operation.Key(), leader, uc,
+		ctx, localEnv, updateEnv, clusterEnv, operation.Key(), leader, r.userConfig,
 	)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -561,80 +591,99 @@ type clusterInitializer struct {
 	unattended    bool
 	values        []byte
 	force         bool
+	userConfig    clusterupdate.UserConfig
+}
+
+func getRuntimeAppVersion(apps app.Applications, loc loc.Locator) (*semver.Version, error) {
+	app, err := apps.GetApp(loc)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	runtimeApp, err := apps.GetApp(*(app.Manifest.Base()))
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	runtimeAppVersion, err := runtimeApp.Package.SemVer()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return runtimeAppVersion, nil
 }
 
 const (
-	updateClusterManualOperationBanner = `The operation has been created in manual mode.
+	updateClusterManualOperationBanner = `The operation %v has been created in manual mode.
 
 See https://gravitational.com/gravity/docs/cluster/#managing-operations for details on working with operation plan.`
 )
 
-func checkCanUpdate(cluster ops.Site) error {
-	existingGravityPackage, err := cluster.App.Manifest.Dependencies.ByName(constants.GravityPackage)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	supportsUpdate, err := supportsUpdate(*existingGravityPackage)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	if !supportsUpdate {
-		return trace.BadParameter(`
-Installed runtime version (%q) is too old and cannot be updated by this package.
-Please update this installation to a minimum required runtime version (%q) before using this update.`,
-			existingGravityPackage.Version, defaults.BaseUpdateVersion)
-	}
-	return nil
+func checkCanUpdate(packages pack.PackageService, installedRuntimeAppVersion, upgradeRuntimeAppVersion *semver.Version) error {
+	return versions.RuntimeUpgradePath{
+		From: installedRuntimeAppVersion,
+		To:   upgradeRuntimeAppVersion,
+	}.Verify(packages)
 }
 
-// checkForUpdate determines if there is an updatePackage for the cluster's application
+// checkForUpdate determines if there is an update for the cluster's application
 // and returns a reference to it if available.
 // updatePackage specifies an optional (potentially incomplete) package name of the update package.
 // If unspecified, the currently installed application package is used.
 // Returns the reference to the update application
 func checkForUpdate(
 	env *localenv.LocalEnvironment,
-	installedPackage loc.Locator,
-	updatePackage string,
+	cluster ops.Site,
+	updatePackage loc.Locator,
 ) (updateApp *app.Application, err error) {
-	// if app package was not provided, default to the latest version of
-	// the currently installed app
-	if updatePackage == "" {
-		updatePackage = installedPackage.Name
-	}
-
-	updateLoc, err := loc.MakeLocator(updatePackage)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
 	apps, err := env.AppServiceCluster()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	updateApp, err = apps.GetApp(*updateLoc)
+	updateApp, err = apps.GetApp(updatePackage)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	err = pack.CheckUpdatePackage(installedPackage, updateApp.Package)
+	err = pack.CheckUpdatePackage(cluster.App.Package, updateApp.Package)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	env.PrintStep("Upgrading cluster from %v to %v", installedPackage.Version,
+	env.PrintStep("Upgrading cluster from %v to %v", cluster.App.Package.Version,
 		updateApp.Package.Version)
 
 	return updateApp, nil
 }
 
-func supportsUpdate(gravityPackage loc.Locator) (supports bool, err error) {
-	ver, err := gravityPackage.SemVer()
-	if err != nil {
-		return false, trace.Wrap(err)
+// getUpdatePackage returns the locator of the update application package.
+// It works as following:
+//
+//  * if a package pattern has been specified, it is used to create the locator (see loc.MakeLocator for details)
+//  * if the pattern is empty and args describes a valid tarball environment - then the application package
+// 	from the environment is used
+//  * otherwise, the latest version of the currently installed cluster application is assumed
+func getUpdatePackage(args localenv.TarballEnvironmentArgs, updatePackagePattern string, clusterApp loc.Locator) (*loc.Locator, error) {
+	if updatePackagePattern != "" {
+		return loc.MakeLocator(updatePackagePattern)
 	}
-	return defaults.BaseUpdateVersion.Compare(*ver) <= 0, nil
+	if loc, err := getAppPackageFromTarball(args); err == nil {
+		log.WithField("app", loc.String()).Info("Use the version from the tarball environment.")
+		return loc, nil
+	} else if !trace.IsNotFound(err) {
+		log.WithError(err).Warn("Failed to query package from tarball environment.")
+	} else {
+		log.WithError(err).Warn("Failed to find package in tarball environment.")
+	}
+	log.WithField("app", clusterApp.String()).Info("Use latest version of the currently installed application.")
+	return loc.MakeLocator(clusterApp.Name)
+}
+
+func getAppPackageFromTarball(args localenv.TarballEnvironmentArgs) (*loc.Locator, error) {
+	tarballEnv, err := localenv.NewTarballEnvironment(args)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer tarballEnv.Close()
+	return install.GetAppPackage(tarballEnv.Apps)
 }
 
 func validateBinaryVersion(updater *update.Updater) error {

@@ -404,7 +404,9 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	// pull an application from a remote OpsCenter
 	g.AppPullCmd.CmdClause = g.AppCmd.Command("pull", "pull an application package from remote Gravity Hub").Hidden()
 	g.AppPullCmd.Package = Locator(g.AppPullCmd.Arg("pkg", "application package").Required())
-	g.AppPullCmd.OpsCenterURL = g.AppPullCmd.Flag("ops-url", "remote Gravity Hub URL").Required().String()
+	g.AppPullCmd.From = g.AppPullCmd.Flag("from", "address or location of the source for package copy (URL or 'cluster')").Required().String()
+	// Alias for 'from'
+	g.AppPullCmd.Flag("ops-url", "(deprecated) remote Gravity Hub URL").StringVar(g.AppPullCmd.From)
 	g.AppPullCmd.Labels = configure.KeyValParam(g.AppPullCmd.Flag("labels", "labels to add to the package"))
 	g.AppPullCmd.Force = g.AppPullCmd.Flag("force", "overwrite destination app if it already exists").Bool()
 
@@ -466,6 +468,10 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	// operations on packages
 	g.PackCmd.CmdClause = g.Command("package", "operations on gravity system packages")
 
+	g.PackManifestCmd.CmdClause = g.PackCmd.Command("manifest", "Output package manifest")
+	g.PackManifestCmd.Package = Locator(g.PackManifestCmd.Arg("package", "Name of package").Required())
+	g.PackManifestCmd.Format = g.PackManifestCmd.Flag("output", "Output type (YAML or JSON)").Default("yaml").String()
+
 	// import package
 	g.PackImportCmd.CmdClause = g.PackCmd.Command("import", "import file or directory into package").Hidden()
 	g.PackImportCmd.CheckManifest = g.PackImportCmd.Flag("check-manifest", "check manifest in the package").Bool()
@@ -515,12 +521,16 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	// push package to remote OpsCenter
 	g.PackPushCmd.CmdClause = g.PackCmd.Command("push", "push package to remote Gravity Hub").Hidden()
 	g.PackPushCmd.Package = Locator(g.PackPushCmd.Arg("pkg", "package name to push").Required())
-	g.PackPushCmd.OpsCenterURL = g.PackPushCmd.Flag("ops-url", "optional remote Gravity Hub URL").String()
+	g.PackPushCmd.To = g.PackPushCmd.Flag("to", "(deprecated) optional remote Gravity Hub URL").String()
+	// Alias for 'to'
+	g.PackPushCmd.Flag("ops-url", "remote Gravity Hub URL").StringVar(g.PackPushCmd.To)
 
 	// pull package from remote OpsCenter
 	g.PackPullCmd.CmdClause = g.PackCmd.Command("pull", "pull package from remote Gravity Hub").Hidden()
 	g.PackPullCmd.Package = Locator(g.PackPullCmd.Arg("pkg", "package name to pull").Required())
-	g.PackPullCmd.OpsCenterURL = g.PackPullCmd.Flag("ops-url", "remote Gravity Hub URL").String()
+	g.PackPullCmd.From = g.PackPullCmd.Flag("from", "address or location of the source for package copy (URL or 'cluster')").String()
+	// Alias for 'from'
+	g.PackPullCmd.Flag("ops-url", "(deprecated) remote Gravity Hub URL").StringVar(g.PackPullCmd.From)
 	g.PackPullCmd.Labels = configure.KeyValParam(g.PackPullCmd.Flag("labels", "labels to add to the package"))
 	g.PackPullCmd.Force = g.PackPullCmd.Flag("force", "overwrite destination package if it already exists").Bool()
 
@@ -751,6 +761,12 @@ func RegisterCommands(app *kingpin.Application) *Application {
 	g.SystemSelinuxBootstrapCmd.CmdClause = g.SystemCmd.Command("selinux-bootstrap", "Configure SELinux file contexts and ports on the node")
 	g.SystemSelinuxBootstrapCmd.Path = g.SystemSelinuxBootstrapCmd.Flag("output", "Path to output file for bootstrap script").String()
 	g.SystemSelinuxBootstrapCmd.VxlanPort = g.SystemSelinuxBootstrapCmd.Flag("vxlan-port", "Custom vxlan port").Int()
+
+	g.SystemEtcdCmd.CmdClause = g.SystemCmd.Command("etcd", "Commands to manipulate etcd cluster")
+
+	g.SystemEtcdMigrateCmd.CmdClause = g.SystemEtcdCmd.Command("migrate", "Migrate etcd data directory between from one version to another")
+	g.SystemEtcdMigrateCmd.From = g.SystemEtcdMigrateCmd.Flag("from", "Source version").String()
+	g.SystemEtcdMigrateCmd.To = g.SystemEtcdMigrateCmd.Flag("to", "Destination version").String()
 
 	// pruning cluster resources
 	g.GarbageCollectCmd.CmdClause = g.Command("gc", "Prune cluster resources")

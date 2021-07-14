@@ -24,6 +24,7 @@ import (
 	"github.com/gravitational/gravity/lib/utils"
 
 	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 )
@@ -46,7 +47,7 @@ type ClusterImageSource interface {
 // * Cluster image manifest file.
 // * Directory with cluster imge manifest file (app.yaml).
 // * Helm chart directory.
-func GetClusterImageSource(path string) (ClusterImageSource, error) {
+func GetClusterImageSource(path string, logger logrus.FieldLogger) (ClusterImageSource, error) {
 	// If this is a file, assume this as a cluster image manifest file.
 	isFile, err := utils.IsFile(path)
 	if err != nil {
@@ -55,6 +56,7 @@ func GetClusterImageSource(path string) (ClusterImageSource, error) {
 	if isFile {
 		return &clusterImageSourceManifest{
 			manifestPath: path,
+			logger:       logger,
 		}, nil
 	}
 	// If this is a directory, it can either contain a cluster image manifest
@@ -95,6 +97,7 @@ func GetClusterImageSource(path string) (ClusterImageSource, error) {
 
 type clusterImageSourceManifest struct {
 	manifestPath string
+	logger       logrus.FieldLogger
 }
 
 // Type returns this source type.
@@ -111,7 +114,7 @@ func (s *clusterImageSourceManifest) Dir() string {
 func (s *clusterImageSourceManifest) Manifest() (*schema.Manifest, error) {
 	manifest, err := schema.ParseManifest(s.manifestPath)
 	if err != nil {
-		log.WithError(err).Error("Failed to parse manifest file.")
+		s.logger.WithError(err).Error("Failed to parse manifest file.")
 		return nil, trace.BadParameter("could not parse manifest file:\n%v",
 			trace.Unwrap(err)) // show original parsing error
 	}

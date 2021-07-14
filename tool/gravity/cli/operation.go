@@ -84,14 +84,8 @@ type SetPhaseParams struct {
 
 // resumeOperation resumes the operation specified with params
 func resumeOperation(localEnv *localenv.LocalEnvironment, environ LocalEnvironmentFactory, params PhaseParams) error {
-	err := executePhase(localEnv, environ, PhaseParams{
-		PhaseID:          fsm.RootPhase,
-		Force:            params.Force,
-		Timeout:          params.Timeout,
-		SkipVersionCheck: params.SkipVersionCheck,
-		OperationID:      params.OperationID,
-		Block:            params.Block,
-	})
+	params.PhaseID = fsm.RootPhase
+	err := executePhase(localEnv, environ, params)
 	if err == nil {
 		return nil
 	}
@@ -215,7 +209,7 @@ func rollbackPlan(localEnv *localenv.LocalEnvironment, environ LocalEnvironmentF
 	// Make sure to reset the cluster state after the operation has been
 	// fully rolled back.
 	if !params.DryRun {
-		return completeOperationPlanForOperation(localEnv, environ, op)
+		return completeOperationPlanForOperation(localEnv, environ, *operation)
 	}
 	return nil
 }
@@ -248,31 +242,31 @@ func completeOperationPlan(localEnv *localenv.LocalEnvironment, environ LocalEnv
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = completeOperationPlanForOperation(localEnv, environ, operation.SiteOperation)
+	err = completeOperationPlanForOperation(localEnv, environ, *operation)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	return nil
 }
 
-func completeOperationPlanForOperation(localEnv *localenv.LocalEnvironment, environ LocalEnvironmentFactory, op ops.SiteOperation) (err error) {
+func completeOperationPlanForOperation(localEnv *localenv.LocalEnvironment, environ LocalEnvironmentFactory, op clusterOperation) (err error) {
 	switch op.Type {
 	case ops.OperationInstall:
-		err = completeInstallPlanForOperation(localEnv, op)
+		err = completeInstallPlanForOperation(localEnv, op.SiteOperation)
 	case ops.OperationExpand:
-		err = completeJoinPlanForOperation(localEnv, op)
+		err = completeJoinPlanForOperation(localEnv, op.SiteOperation)
 	case ops.OperationUpdate:
 		err = completeUpdatePlanForOperation(localEnv, environ, op)
 	case ops.OperationUpdateRuntimeEnviron:
-		err = completeEnvironPlanForOperation(localEnv, environ, op)
+		err = completeEnvironPlanForOperation(localEnv, environ, op.SiteOperation)
 	case ops.OperationUpdateConfig:
-		err = completeConfigPlanForOperation(localEnv, environ, op)
+		err = completeConfigPlanForOperation(localEnv, environ, op.SiteOperation)
 	default:
-		return completeClusterOperationPlan(localEnv, op)
+		return completeClusterOperationPlan(localEnv, op.SiteOperation)
 	}
 	if op.Type != ops.OperationInstall && trace.IsNotFound(err) {
 		log.WithError(err).Warn("Failed to complete operation from service.")
-		return completeClusterOperationPlan(localEnv, op)
+		return completeClusterOperationPlan(localEnv, op.SiteOperation)
 	}
 	return trace.Wrap(err)
 }

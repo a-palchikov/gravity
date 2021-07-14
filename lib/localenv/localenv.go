@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -268,14 +269,15 @@ func (env *LocalEnvironment) InGravity() bool {
 
 // PackageService returns a service managing gravity packages on the specified OpsCenter
 // or the local packages if the OpsCenter has not been specified.
-func (env *LocalEnvironment) PackageService(opsCenterURL string, options ...httplib.ClientOption) (pack.PackageService, error) {
-	if opsCenterURL == "" { // assume local OpsCenter
+func (env *LocalEnvironment) PackageService(packageServiceURL string, options ...httplib.ClientOption) (pack.PackageService, error) {
+	if packageServiceURL == "" { // assume local package store
 		return env.Packages, nil
 	}
-	if opsCenterURL == defaults.GravityServiceURL {
+
+	if packageServiceURL == defaults.GravityServiceURL {
 		options = append(options, httplib.WithLocalResolver(env.DNS.Addr()))
 	}
-	credentials, err := env.Credentials.For(opsCenterURL)
+	credentials, err := env.Credentials.For(packageServiceURL)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -290,6 +292,54 @@ func (env *LocalEnvironment) PackageService(opsCenterURL string, options ...http
 		return nil, trace.Wrap(err)
 	}
 	return client, nil
+}
+
+// PackageServiceFromURL returns a service managing gravity packages on the specified OpsCenter
+// or the local packages if the OpsCenter has not been specified.
+func (env *LocalEnvironment) PackageServiceFromURL(packageServiceURL string, options ...httplib.ClientOption) (pack.PackageService, func() error, error) {
+	if packageServiceURL == "" { // assume local package store
+		return env.Packages, emptyCloser, nil
+	}
+
+	if packageServiceURL == "cluster" {
+		packageServiceURL = defaults.GravityServiceURL
+	}
+
+	u, err := url.Parse(packageServiceURL)
+	if err != nil {
+		return nil, nil, trace.Wrap(err, "invalid URL: %q", packageServiceURL)
+	}
+
+	if u.Scheme == "file" {
+		remoteEnv, err := New(filepath.Join(u.Host, u.Path))
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		return remoteEnv.Packages, remoteEnv.Close, nil
+	}
+
+	if packageServiceURL == defaults.GravityServiceURL {
+		options = append(options, httplib.WithLocalResolver(env.DNS.Addr()))
+	}
+	credentials, err := env.Credentials.For(packageServiceURL)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	if credentials.TLS != nil {
+		options = append(options, httplib.WithTLSClientConfig(credentials.TLS))
+	}
+	params := []roundtrip.ClientParam{
+		roundtrip.HTTPClient(env.HTTPClient(options...)),
+	}
+	client, err := newPackClient(credentials.Entry, credentials.URL, params...)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	return client, emptyCloser, nil
+}
+
+func emptyCloser() error {
+	return nil
 }
 
 // CurrentUser returns name of the currently logged in user
@@ -383,6 +433,45 @@ func (env *LocalEnvironment) AppService(opsCenterURL string, config AppConfig, o
 		return nil, trace.Wrap(err)
 	}
 	return client, nil
+}
+
+func (env *LocalEnvironment) AppServiceFromURL(packageServiceURL string, config AppConfig, options ...httplib.ClientOption) (appbase.Applications, func() error, error) {
+	if packageServiceURL == "" {
+		appService, err := env.AppServiceLocal(config)
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		return appService, emptyCloser, nil
+	}
+
+	u, err := url.Parse(packageServiceURL)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	if u.Scheme == "file" {
+		remoteEnv, err := New(filepath.Join(u.Host, u.Path))
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		return remoteEnv.Apps, remoteEnv.Close, nil
+	}
+
+	credentials, err := env.Credentials.For(packageServiceURL)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	if credentials.TLS != nil {
+		options = append(options, httplib.WithTLSClientConfig(credentials.TLS))
+	}
+	params := []appclient.Param{
+		appclient.HTTPClient(env.HTTPClient(options...)),
+		appclient.WithLocalDialer(httplib.LocalResolverDialer(env.DNS.Addr())),
+	}
+	client, err := NewAppsClient(credentials.Entry, credentials.URL, params...)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	return client, emptyCloser, nil
 }
 
 // AppServiceCluster creates the *local* app service that uses the cluster's
