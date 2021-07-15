@@ -260,7 +260,6 @@ func Filter(locators []Locator, filters []Locator, message string) (result []Loc
 	return result
 }
 
-
 // GetUpdatedDependencies compares installedDeps against the updateDeps
 // and returns only locators from updateDeps that are updates of those given with installedDeps
 func GetUpdatedDependencies(installedDeps, updateDeps []Locator) ([]Locator, error) {
@@ -277,6 +276,11 @@ func GetUpdatedDependencies(installedDeps, updateDeps []Locator) ([]Locator, err
 	}
 
 	return updates, nil
+}
+
+// IsPlanetPackage returns if the specified package refers to a planet package
+func IsPlanetPackage(loc Locator) bool {
+	return Planet.IsEqualTo(loc.ZeroVersion())
 }
 
 var (

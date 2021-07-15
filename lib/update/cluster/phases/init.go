@@ -31,6 +31,7 @@ import (
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
 	"github.com/gravitational/gravity/lib/pack"
+	"github.com/gravitational/gravity/lib/rpc"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/state"
 	"github.com/gravitational/gravity/lib/storage"
@@ -238,6 +239,40 @@ func (p *updatePhaseInit) Rollback(ctx context.Context) error {
 	return nil
 }
 
+// initTeleportAuthToken creates a provisioning token that teleport nodes will
+// use to authenticate with the auth server if it doesn't exist yet.
+func (p *updatePhaseInit) initTeleportAuthToken() error {
+	cluster, err := p.Backend.GetLocalSite(defaults.SystemAccountID)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	allTokens, err := p.Backend.GetSiteProvisioningTokens(cluster.Domain)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	for _, t := range allTokens {
+		if t.IsTeleport() && t.IsPersistent() {
+			p.Info("Teleport auth token already initialized.")
+			return nil
+		}
+	}
+	token, err := users.CryptoRandomToken(defaults.ProvisioningTokenBytes)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	_, err = p.Backend.CreateProvisioningToken(storage.ProvisioningToken{
+		AccountID:  cluster.AccountID,
+		SiteDomain: cluster.Domain,
+		Token:      token,
+		Type:       storage.ProvisioningTokenTypeTeleport,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	p.Info("Initialized Teleport auth token.")
+	return nil
+}
+
 // updateRPCCredentials rotates the RPC credentials used for install/expand/leave operations.
 func (p *updatePhaseInit) updateRPCCredentials() error {
 	// This assumes that the cluster controller Pods are eventually restarted
@@ -254,27 +289,25 @@ func (p *updatePhaseInit) updateRPCCredentials() error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	// TODO(dima): base this on RPC creds rotate branch
-	// loc, err := rpc.UpsertCredentials(p.Packages)
-	// if err != nil {
-	// 	return trace.Wrap(err)
-	// }
-	// p.WithField("package", loc.String()).Info("Update RPC credentials.")
+	loc, err := rpc.UpsertCredentials(p.Packages)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	p.WithField("package", loc.String()).Info("Update RPC credentials.")
 	return nil
 }
 
 func (p *updatePhaseInit) backupRPCCredentials() error {
-	// TODO(dima): base this on RPC creds rotate branch
-	// p.Info("Backup RPC credentials")
-	// env, rc, err := rpc.LoadCredentialsData(p.Packages)
-	// if err != nil {
-	// 	return trace.Wrap(err)
-	// }
-	// defer rc.Close()
-	// _, err = p.Packages.UpsertPackage(rpcBackupPackage(p.Operation.SiteDomain), rc, pack.WithLabels(env.RuntimeLabels))
-	// if err != nil {
-	// 	return trace.Wrap(err)
-	// }
+	p.Info("Backup RPC credentials")
+	env, rc, err := rpc.LoadCredentialsData(p.Packages)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	defer rc.Close()
+	_, err = p.Packages.UpsertPackage(rpcBackupPackage(p.Operation.SiteDomain), rc, pack.WithLabels(env.RuntimeLabels))
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	return nil
 }
 
@@ -286,11 +319,10 @@ func (p *updatePhaseInit) restoreRPCCredentials() error {
 	}
 	defer rc.Close()
 	delete(env.RuntimeLabels, pack.OperationIDLabel)
-	// TODO(dima): port RPC creds rotate PR for these changes
-	// err = rpc.UpsertCredentialsFromData(p.Packages, rc, env.RuntimeLabels)
-	// if err != nil {
-	// 	return trace.Wrap(err)
-	// }
+	err = rpc.UpsertCredentialsFromData(p.Packages, rc, env.RuntimeLabels)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	return nil
 }
 
@@ -606,14 +638,6 @@ func removeLegacyUpdateDirectory(log log.FieldLogger) error {
 	}
 	log.WithField("dir", updateDir).Debug("Remove legacy update directory.")
 	return trace.ConvertSystemError(os.RemoveAll(updateDir))
-}
-
-func rpcBackupPackage(repository string) loc.Locator {
-	return loc.Locator{
-		Repository: repository,
-		Name:       "rpcagent-secrets-backup",
-		Version:    loc.FirstVersion,
-	}
 }
 
 func rpcBackupPackage(repository string) loc.Locator {
