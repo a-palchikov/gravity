@@ -31,10 +31,10 @@ import (
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
 	"github.com/gravitational/gravity/lib/pack"
-	"github.com/gravitational/gravity/lib/rpc"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/state"
 	"github.com/gravitational/gravity/lib/storage"
+	"github.com/gravitational/gravity/lib/storage/clusterconfig"
 	"github.com/gravitational/gravity/lib/users"
 	"github.com/gravitational/gravity/lib/utils"
 
@@ -77,7 +77,7 @@ type updatePhaseInit struct {
 	// installedApp references the installed application instance
 	installedApp app.Application
 	// existingDocker describes the existing Docker configuration
-	existingDocker             storage.DockerConfig
+	existingDocker storage.DockerConfig
 	// existingDNS is the existing DNS configuration
 	existingDNS                storage.DNSConfig
 	existingEnviron            map[string]string
@@ -168,7 +168,7 @@ func NewUpdatePhaseInitLeader(
 		existingClusterConfigBytes: configBytes,
 		existingClusterConfig:      clusterConfig,
 		existingEnviron:            env.GetKeyValues(),
-		init:           	    init,
+		init:                       init,
 	}, nil
 }
 
@@ -254,25 +254,27 @@ func (p *updatePhaseInit) updateRPCCredentials() error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	loc, err := rpc.UpsertCredentials(p.Packages)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	p.WithField("package", loc.String()).Info("Update RPC credentials.")
+	// TODO(dima): base this on RPC creds rotate branch
+	// loc, err := rpc.UpsertCredentials(p.Packages)
+	// if err != nil {
+	// 	return trace.Wrap(err)
+	// }
+	// p.WithField("package", loc.String()).Info("Update RPC credentials.")
 	return nil
 }
 
 func (p *updatePhaseInit) backupRPCCredentials() error {
-	p.Info("Backup RPC credentials")
-	env, rc, err := rpc.LoadCredentialsData(p.Packages)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	defer rc.Close()
-	_, err = p.Packages.UpsertPackage(rpcBackupPackage(p.Operation.SiteDomain), rc, pack.WithLabels(env.RuntimeLabels))
-	if err != nil {
-		return trace.Wrap(err)
-	}
+	// TODO(dima): base this on RPC creds rotate branch
+	// p.Info("Backup RPC credentials")
+	// env, rc, err := rpc.LoadCredentialsData(p.Packages)
+	// if err != nil {
+	// 	return trace.Wrap(err)
+	// }
+	// defer rc.Close()
+	// _, err = p.Packages.UpsertPackage(rpcBackupPackage(p.Operation.SiteDomain), rc, pack.WithLabels(env.RuntimeLabels))
+	// if err != nil {
+	// 	return trace.Wrap(err)
+	// }
 	return nil
 }
 
@@ -284,10 +286,11 @@ func (p *updatePhaseInit) restoreRPCCredentials() error {
 	}
 	defer rc.Close()
 	delete(env.RuntimeLabels, pack.OperationIDLabel)
-	err = rpc.UpsertCredentialsFromData(p.Packages, rc, env.RuntimeLabels)
-	if err != nil {
-		return trace.Wrap(err)
-	}
+	// TODO(dima): port RPC creds rotate PR for these changes
+	// err = rpc.UpsertCredentialsFromData(p.Packages, rc, env.RuntimeLabels)
+	// if err != nil {
+	// 	return trace.Wrap(err)
+	// }
 	return nil
 }
 

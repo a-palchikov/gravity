@@ -92,6 +92,8 @@ func (s *PlanSuite) SetUpSuite(c *check.C) {
 	c.Assert(err, check.IsNil)
 	s.gravityPackage, err = app.Manifest.Dependencies.ByName(constants.GravityPackage)
 	c.Assert(err, check.IsNil)
+	// TODO(dima): check this
+	// app.Manifest.RuntimePackage()
 	runtimePackage, err := app.Manifest.DefaultRuntimePackage()
 	c.Assert(err, check.IsNil)
 	s.runtimePackage = *runtimePackage

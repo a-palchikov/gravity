@@ -25,7 +25,6 @@ import (
 	"runtime"
 
 	libapp "github.com/gravitational/gravity/lib/app"
-	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/docker"
 	"github.com/gravitational/gravity/lib/install"
@@ -210,7 +209,7 @@ func collectUpgradeDependencies(env *localenv.TarballEnvironment, installedRunti
 func syncDependenciesWithCluster(ctx context.Context, env *localenv.LocalEnvironment, cluster ops.Site, deps libapp.Dependencies, syncer libapp.Syncer) error {
 	var registries []string
 	err := utils.Retry(defaults.RetryInterval, defaults.RetryLessAttempts, func() (err error) {
-		registries, err = getRegistries(ctx, env, cluster.ClusterState.Servers)
+		registries, err = getRegistries(ctx, cluster.ClusterState.Servers)
 		return trace.Wrap(err)
 	})
 	if err != nil {

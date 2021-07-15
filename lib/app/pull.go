@@ -202,7 +202,7 @@ func (r Puller) pullPackage(loc loc.Locator) error {
 		}
 	}
 	logger.Info("Pull package.")
-	reader := ioutil.NopCloser(utils.NopReader())
+	reader := ioutil.NopCloser(utils.NewNopReader())
 	if r.MetadataOnly {
 		env, err = r.SrcPack.ReadPackageEnvelope(loc)
 	} else {
@@ -274,7 +274,7 @@ func (r Puller) pullApp(loc loc.Locator) error {
 	}
 	logger.Info("Pull application.")
 	var env *pack.PackageEnvelope
-	reader := ioutil.NopCloser(utils.NopReader())
+	reader := ioutil.NopCloser(utils.NewNopReader())
 	if r.MetadataOnly {
 		env, err = r.SrcPack.ReadPackageEnvelope(loc)
 	} else {

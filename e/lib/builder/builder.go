@@ -16,7 +16,6 @@ package builder
 
 import (
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/url"
@@ -82,10 +81,10 @@ func NewGenerator(config Config) (builder.Generator, error) {
 	}, nil
 }
 
-// Generate extends the installer generation logic from open-source by
+// NewInstallerRequest extends the installer generation logic from open-source by
 // considering additional features such as remote support and package
 // encyption
-func (g *generator) Generate(builder *builder.Engine, manifest *schema.Manifest, application app.Application) (io.ReadCloser, error) {
+func (g *generator) NewInstallerRequest(engine *builder.Engine, manifest schema.Manifest, application app.Application) (*app.InstallerRequest, error) {
 	installerReq := app.InstallerRequest{
 		Application:   application.Package,
 		CACert:        string(g.caCert),
@@ -94,7 +93,7 @@ func (g *generator) Generate(builder *builder.Engine, manifest *schema.Manifest,
 	// if remote support options are present, the installed cluster will connect
 	// to the specified Ops Center
 	if g.RemoteSupportAddress != "" {
-		err := g.configureTrustedClusters(builder, &installerReq)
+		err := g.configureTrustedClusters(engine, &installerReq)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
@@ -103,7 +102,7 @@ func (g *generator) Generate(builder *builder.Engine, manifest *schema.Manifest,
 	if manifest.Extensions != nil {
 		g.configureExtensions(manifest, &installerReq)
 	}
-	return builder.Apps.GetAppInstaller(installerReq)
+	return &installerReq, nil
 }
 
 func (g *generator) configureTrustedClusters(builder *builder.Engine, req *app.InstallerRequest) error {
@@ -138,7 +137,7 @@ func (g *generator) createSystemAccount(builder *builder.Engine) (*storage.Accou
 	})
 }
 
-func (g *generator) configureExtensions(manifest *schema.Manifest, req *app.InstallerRequest) {
+func (g *generator) configureExtensions(manifest schema.Manifest, req *app.InstallerRequest) {
 	if manifest.Extensions.Encryption != nil {
 		req.EncryptionKey = manifest.Extensions.Encryption.EncryptionKey
 		req.CACert = manifest.Extensions.Encryption.CACert

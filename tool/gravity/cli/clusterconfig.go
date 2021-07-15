@@ -81,7 +81,7 @@ func newConfigUpdater(ctx context.Context, localEnv, updateEnv *localenv.LocalEn
 		resource: configBytes,
 		config:   config,
 	}
-	return newUpdater(ctx, localEnv, updateEnv, init, nil)
+	return newUpdater(ctx, localEnv, updateEnv, init)
 }
 
 func executeConfigPhaseForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, params PhaseParams, operation ops.SiteOperation) error {
@@ -214,7 +214,6 @@ func (r configInitializer) newOperationPlan(
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	clusterEnv *localenv.ClusterEnvironment,
 	leader *storage.Server,
-	userConfig interface{},
 ) (*storage.OperationPlan, error) {
 	plan, err := clusterconfig.NewOperationPlan(
 		ctx, operator, clusterEnv.Apps, clusterEnv.Client,

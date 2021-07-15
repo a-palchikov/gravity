@@ -80,7 +80,7 @@ func (s *S) TestGetsUpdatePackageFromTarballEnviron(c *check.C) {
 func createTarballEnviron(stateDir string, c *check.C) {
 	backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(stateDir, defaults.GravityDBFile)})
 	c.Assert(err, check.IsNil)
-	objects, err := fs.New(fs.Config{Path: filepath.Join(stateDir, defaults.PackagesDir)})
+	objects, err := fs.New(filepath.Join(stateDir, defaults.PackagesDir))
 	c.Assert(err, check.IsNil)
 	services := opsservice.SetupTestServicesInDirectory(stateDir, backend, objects, c)
 	apptest.CreateRuntimeApplication(services.Apps, c)

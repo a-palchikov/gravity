@@ -121,6 +121,8 @@ func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
 			servers:     updates,
 			gravity:     gravityPackage,
 			changesetID: "id",
+			// TODO(dima): configure
+			// userConfig: foo,
 		}),
 	}
 	builder := newBuilder(c, params)
@@ -896,9 +898,10 @@ func (r *params) nodePhase(server storage.UpdateServer, leadMaster storage.Serve
 
 func (r *params) bootstrap(servers []storage.UpdateServer, gravityPackage loc.Locator, requires ...string) storage.OperationPhase {
 	root := storage.OperationPhase{
-		ID:          "/bootstrap",
-		Description: "Bootstrap update operation on nodes",
-		Requires:    requires,
+		ID:            "/bootstrap",
+		Description:   "Bootstrap update operation on nodes",
+		Requires:      requires,
+		LimitParallel: NumParallel(),
 	}
 	root.Phases = append(root.Phases, r.bootstrapLeaderNode(servers, gravityPackage))
 	for _, server := range servers[1:] {
@@ -1230,9 +1233,9 @@ func (r params) config(requires ...string) storage.OperationPhase {
 	masters, _ := fsm.SplitServers(r.servers)
 	masters = reorderStorageServers(masters, r.leadMaster)
 	return storage.OperationPhase{
-		ID:          "/config",
-		Description: "Update system configuration on nodes",
-		Requires:    requires,
+		ID:            "/config",
+		Description:   "Update system configuration on nodes",
+		Requires:      requires,
 		LimitParallel: NumParallel(),
 		Phases: []storage.OperationPhase{
 			r.configNode(masters[0]),

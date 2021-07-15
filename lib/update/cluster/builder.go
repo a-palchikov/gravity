@@ -246,6 +246,8 @@ type phaseBuilder struct {
 	steps []intermediateUpdateStep
 	// targetStep defines the final runtime update step
 	targetStep targetUpdateStep
+	// userConfig combines operation-specific custom configuration
+	userConfig UserConfig
 }
 
 // setLeaderElection creates a phase that will change the leader election state in the cluster

@@ -39,7 +39,7 @@ import (
 type Syncer interface {
 	// Sync makes sure that local cache has all required dependencies for the
 	// selected runtime
-	Sync(ctx context.Context, engine *Engine, runtimeVersion semver.Version) error
+	Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error
 }
 
 // NewSyncerFunc defines function that creates syncer for a builder
@@ -71,7 +71,7 @@ func newS3Syncer() (*s3Syncer, error) {
 
 // Sync makes sure that local cache has all required dependencies for the
 // selected runtime
-func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, runtimeVersion semver.Version) error {
+func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
 	tarball, err := s.hub.Get(application.WithVersion(runtimeVersion))
 	if err != nil {
 		return trace.Wrap(err)
@@ -102,15 +102,15 @@ func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, runtimeVersion semv
 		return trace.Wrap(err)
 	}
 	puller := libapp.Puller{
-		FieldLogger: engine.FieldLogger,
+		FieldLogger: log,
 		SrcPack:     env.Packages,
 		SrcApp:      tarballApps,
 		DstPack:     engine.Env.Packages,
 		DstApp:      cacheApps,
-		Parallel:    builder.VendorReq.Parallel,
+		Parallel:    engine.Config.Parallel,
 		Upsert:      true,
 	}
-	return puller.PullAppDeps(ctx, builder.appForRuntime(runtimeVersion))
+	return puller.PullAppDeps(ctx, appForRuntime(app, manifest, runtimeVersion))
 }
 
 // PackSyncer synchronizes local package cache with pack/apps services
@@ -130,21 +130,21 @@ func NewPackSyncer(pack pack.PackageService, apps libapp.Applications, repo stri
 }
 
 // Sync pulls dependencies from the package/app service not available locally
-func (s *packSyncer) Sync(ctx context.Context, engine *Engine, runtimeVersion semver.Version) error {
+func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
 	cacheApps, err := engine.Env.AppServiceLocal(localenv.AppConfig{})
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	puller := libapp.Puller{
-		FieldLogger: engine.FieldLogger,
+		FieldLogger: log,
 		SrcPack:     s.pack,
 		SrcApp:      s.apps,
 		DstPack:     engine.Env.Packages,
 		DstApp:      cacheApps,
-		Parallel:    builder.VendorReq.Parallel,
+		Parallel:    engine.Config.Parallel,
 		OnConflict:  libapp.GetDependencyConflictHandler(false),
 	}
-	err = puller.PullAppDeps(ctx, builder.appForRuntime(runtimeVersion))
+	err = puller.PullAppDeps(ctx, appForRuntime(app, manifest, runtimeVersion))
 	if err != nil {
 		if utils.IsNetworkError(err) || trace.IsEOF(err) {
 			return trace.ConnectionProblem(err, "failed to download "+

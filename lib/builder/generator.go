@@ -18,21 +18,20 @@ package builder
 
 import (
 	"github.com/gravitational/gravity/lib/app"
-	// TODO(dima): check this
-	//"github.com/gravitational/gravity/lib/schema"
+	"github.com/gravitational/gravity/lib/schema"
 )
 
 // Generator defines a method for generating standalone installers
 type Generator interface {
 	// NewInstallerRequest returns a new request to generate an installer
 	// for the specified application
-	NewInstallerRequest(*Engine, app.Application) (*app.InstallerRequest, error)
+	NewInstallerRequest(*Engine, schema.Manifest, app.Application) (*app.InstallerRequest, error)
 }
 
 type generator struct{}
 
 // NewInstallerRequest returns a request to build an installer for the specified application
-func (g *generator) NewInstallerRequest(engine *Engine, application app.Application) (*app.InstallerRequest, error) {
+func (g *generator) NewInstallerRequest(engine *Engine, _ schema.Manifest, application app.Application) (*app.InstallerRequest, error) {
 	return &app.InstallerRequest{
 		Application: application.Package,
 	}, nil

@@ -24,7 +24,6 @@ import (
 	"github.com/gravitational/rigging"
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
-	"k8s.io/api/extensions/v1beta1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -108,21 +107,6 @@ func GetUpsertBootstrapResourceFunc(client *kubernetes.Clientset) resources.Reso
 				return trace.Wrap(rigging.ConvertError(err))
 			}
 			log.Debugf("Updated PodSecurityPolicy %q.", resource.Name)
-		case *v1beta1.PodSecurityPolicy:
-			// Support legacy extensions for intermediate upgrades from 5.5.x
-			_, err = client.ExtensionsV1beta1().PodSecurityPolicies().Create(resource)
-			if err == nil {
-				log.Debugf("Created PodSecurityPolicy %q.", resource.Name)
-				return nil
-			}
-			if !trace.IsAlreadyExists(rigging.ConvertError(err)) {
-				return trace.Wrap(rigging.ConvertError(err))
-			}
-			_, err = client.ExtensionsV1beta1().PodSecurityPolicies().Update(resource)
-			if err != nil {
-				return trace.Wrap(rigging.ConvertError(err))
-			}
-			log.Debugf("Updated v1beta1.PodSecurityPolicy %q.", resource.Name)
 		default:
 			log.Warnf("Unsupported bootstrap resource: %#v.", resource)
 			return trace.BadParameter("unsupported bootstrap resource: %#v.", resource.GetObjectKind().GroupVersionKind())

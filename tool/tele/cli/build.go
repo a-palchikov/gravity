@@ -85,7 +85,7 @@ func buildClusterImage(ctx context.Context, params BuildParameters) error {
 		Overwrite:  params.Overwrite,
 		BaseImage:  params.BaseImage,
 		Vendor:     params.Vendor,
-		UpgradeVia:       params.UpgradeVia,
+		UpgradeVia: params.UpgradeVia,
 	})
 }
 

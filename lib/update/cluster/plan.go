@@ -40,7 +40,8 @@ import (
 	"github.com/gravitational/gravity/lib/utils"
 
 	"github.com/gravitational/rigging"
-	teleservices "github.com/gravitational/teleport/lib/services"
+
+	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -228,15 +229,15 @@ func NewOperationPlan(ctx context.Context, config PlanConfig) (*storage.Operatio
 			GravityPackage:     *gravityPackage,
 			OfflineCoordinator: config.Leader,
 		},
-		operator:          config.Operator,
-		operation:         *config.Operation,
+		operator:                   config.Operator,
+		operation:                  *config.Operation,
 		appUpdates:                 appUpdates,
-		links:             links,
-		trustedClusters:   trustedClusters,
+		links:                      links,
+		trustedClusters:            trustedClusters,
 		packages:                   config.Packages,
 		apps:                       config.Apps,
-		roles:             roles,
-		leadMaster:        *config.Leader,
+		roles:                      roles,
+		leadMaster:                 *config.Leader,
 		installedApp:               *installedApp,
 		updateApp:                  *updateApp,
 		installedRuntimeApp:        *installedRuntimeApp,
@@ -246,8 +247,8 @@ func NewOperationPlan(ctx context.Context, config PlanConfig) (*storage.Operatio
 		installedTeleport:          *installedTeleport,
 		updateTeleport:             *updateTeleport,
 		serviceUser:                *config.ServiceUser,
-		userConfig:        config.UserConfig,
-	})
+		userConfig:                 config.UserConfig,
+	}
 
 	err = builder.initSteps(ctx)
 	if err != nil {
@@ -309,6 +310,7 @@ type PlanConfig struct {
 	Leader *storage.Server
 	// ServiceUser specifies the cluster's service user
 	ServiceUser *storage.OSUser
+	// UserConfig combines operation-specific custom configuration
 	UserConfig UserConfig
 }
 
@@ -414,7 +416,8 @@ func shouldUpdateCoreDNS(client *kubernetes.Clientset) (bool, error) {
 		return false, trace.Wrap(err)
 	}
 
-	_, err = client.RbacV1().ClusterRoleBindings().Get(libphase.CoreDNSResourceName, metav1.GetOptions{})
+	_, err = client.RbacV1().ClusterRoleBindings().
+		Get(context.TODO(), libphase.CoreDNSResourceName, metav1.GetOptions{})
 	err = rigging.ConvertError(err)
 	if err != nil {
 		if trace.IsNotFound(err) {
@@ -423,7 +426,8 @@ func shouldUpdateCoreDNS(client *kubernetes.Clientset) (bool, error) {
 		return false, trace.Wrap(err)
 	}
 
-	_, err = client.CoreV1().ConfigMaps(constants.KubeSystemNamespace).Get("coredns", metav1.GetOptions{})
+	_, err = client.CoreV1().ConfigMaps(constants.KubeSystemNamespace).
+		Get(context.TODO(), "coredns", metav1.GetOptions{})
 	err = rigging.ConvertError(err)
 	if err != nil {
 		if trace.IsNotFound(err) {

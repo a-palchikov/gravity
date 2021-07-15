@@ -113,24 +113,48 @@ func (s *Suite) TestVersions(c *check.C) {
 func (s *Suite) TestVersionQueries(c *check.C) {
 	upgradeRuntime := semver.New("7.0.14")
 	tests := []struct {
-		from    *semver.Version
+		path    RuntimeUpgradePath
 		direct  bool
 		via     Versions
 		comment string
 	}{
 		{
-			from:    semver.New("6.1.30"),
+			path: RuntimeUpgradePath{
+				From: semver.New("6.1.30"),
+				To:   upgradeRuntime,
+				directUpgradeVersions: Versions{
+					semver.New("6.1.0"),
+					semver.New("7.0.0"),
+				},
+			},
 			direct:  true,
-			via:     Versions(nil),
 			comment: "Direct upgrade from a previous major version",
 		},
 		{
-			from:    semver.New("5.0.0"),
-			via:     Versions(nil),
+			path: RuntimeUpgradePath{
+				From: semver.New("5.0.0"),
+				To:   upgradeRuntime,
+				directUpgradeVersions: Versions{
+					semver.New("6.1.0"),
+					semver.New("7.0.0"),
+				},
+			},
+			direct:  false,
 			comment: "No upgrade from an older version",
 		},
 		{
-			from: semver.New("5.5.38"),
+			path: RuntimeUpgradePath{
+				From: semver.New("5.5.38"),
+				To:   upgradeRuntime,
+				directUpgradeVersions: Versions{
+					semver.New("6.1.0"),
+					semver.New("7.0.0"),
+				},
+				upgradeViaVersions: map[*semver.Version]Versions{
+					semver.New("5.5.0"): {semver.New("6.1.0")},
+				},
+			},
+			direct: false,
 			via: Versions{
 				semver.New("6.1.0"),
 			},
@@ -138,13 +162,9 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 		},
 	}
 	for _, test := range tests {
-		path := RuntimeUpgradePath{
-			From: test.from,
-			To:   upgradeRuntime,
-		}
 		comment := check.Commentf(test.comment)
-		direct := path.SupportsDirectUpgrade()
-		via := path.SupportsUpgradeVia()
+		direct := test.path.SupportsDirectUpgrade()
+		via := test.path.SupportsUpgradeVia()
 		c.Assert(direct, check.Equals, test.direct, comment)
 		c.Assert(via, check.DeepEquals, test.via, comment)
 	}
@@ -153,7 +173,7 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 func newPackageService(dir string, c *check.C) *localpack.PackageServer {
 	backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(dir, "bolt.db")})
 	c.Assert(err, check.IsNil)
-	objects, err := fs.New(fs.Config{Path: dir})
+	objects, err := fs.New(dir)
 	c.Assert(err, check.IsNil)
 	pack, err := localpack.New(localpack.Config{
 		Backend:     backend,
@@ -174,7 +194,7 @@ var (
 		semver.New("3.0.0"),
 	}
 	upgradeViaVersions = map[*semver.Version]Versions{
-		semver.New("1.0.0"): Versions{semver.New("2.0.10")},
-		semver.New("1.1.0"): Versions{semver.New("2.1.0")},
+		semver.New("1.0.0"): {semver.New("2.0.10")},
+		semver.New("1.1.0"): {semver.New("2.1.0")},
 	}
 )

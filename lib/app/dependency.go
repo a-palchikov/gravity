@@ -212,7 +212,7 @@ func (r *state) finalize(pack pack.PackageService) error {
 func AppsToExclude(manifest schema.Manifest) []loc.Locator {
 	var excludeApps []loc.Locator
 	for _, app := range OptionalDependencies {
-		if schema.ShouldSkipApp(manifest, app) {
+		if schema.ShouldSkipApp(manifest, app.Name) {
 			excludeApps = append(excludeApps, app)
 		}
 	}

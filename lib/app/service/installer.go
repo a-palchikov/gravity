@@ -51,7 +51,7 @@ func (r *Applications) getApplicationInstaller(
 	apps *Applications,
 ) error {
 	apps.config.ExcludeDeps = appservice.AppsToExclude(app.Manifest)
-	return pullApplications([]appservice.Application{app}, apps, r, r.FieldLogger)
+	return pullApplications([]appservice.Application{app}, apps, r, r.config.FieldLogger)
 }
 
 func (r *Applications) getClusterInstaller(
@@ -163,7 +163,7 @@ func (r *Applications) GetAppInstaller(req appservice.InstallerRequest) (install
 	case schema.KindBundle, schema.KindCluster:
 		items, err = r.getClusterInstaller(req, *app, localApps)
 	case schema.KindApplication:
-		items, err = r.getApplicationInstaller(req, app, localApps)
+		err = r.getApplicationInstaller(req, *app, localApps)
 	default:
 		return nil, trace.BadParameter("unsupported kind %q",
 			app.Manifest.Kind)
@@ -245,7 +245,7 @@ func pullDependencies(
 	dependencies, err := appservice.GetDependencies(appservice.GetDependenciesRequest{
 		App:  app,
 		Apps: remoteApps,
-		Pack: remoteApps.Packages,
+		Pack: remoteApps.config.Packages,
 	})
 	if err != nil {
 		return trace.Wrap(err)
@@ -288,7 +288,7 @@ func pullPackages(packages []pack.PackageEnvelope, localPackages, remotePackages
 func pullApplications(apps []appservice.Application, localApps, remoteApps *Applications, log log.FieldLogger) error {
 	log.WithField("applications", apps).Info("Pull applications.")
 	for _, app := range apps {
-		_, reader, err := remoteApps.config.Packages.ReadPackage(app.Package)
+		envelope, reader, err := remoteApps.config.Packages.ReadPackage(app.Package)
 		if err != nil {
 			return trace.Wrap(err)
 		}

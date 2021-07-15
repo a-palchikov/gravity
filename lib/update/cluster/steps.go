@@ -84,6 +84,7 @@ func (r *phaseBuilder) initSteps(ctx context.Context) error {
 		gravity:        r.planTemplate.GravityPackage,
 		supportsTaints: supportsTaints(r.updateRuntimeAppVersion),
 		openEBSEnabled: openEBSEnabled,
+		userConfig:     r.userConfig,
 	})
 	return nil
 }
@@ -150,7 +151,7 @@ func (r phaseBuilder) collectIntermediateSteps() (result map[string]intermediate
 			if r.shouldSkipIntermediateUpdate(*v) {
 				return nil
 			}
-			step = newIntermediateUpdateStep(*v)
+			step = newIntermediateUpdateStep(*v, r.userConfig)
 		}
 		step.fromPackage(env, r.apps)
 		result[version] = step
@@ -307,9 +308,9 @@ func (r phaseBuilder) configUpdates(
 	return updates, nil
 }
 
-func newIntermediateUpdateStep(version semver.Version) intermediateUpdateStep {
+func newIntermediateUpdateStep(version semver.Version, userConfig UserConfig) intermediateUpdateStep {
 	return intermediateUpdateStep{
-		updateStep:        newUpdateStep(updateStep{}),
+		updateStep:        newUpdateStep(updateStep{userConfig: userConfig}),
 		runtimeAppVersion: version,
 	}
 }
@@ -464,8 +465,9 @@ func (r targetUpdateStep) initPhase(leadMaster storage.Server, installedApp, upd
 
 func (r targetUpdateStep) bootstrapPhase(servers []storage.UpdateServer, installedApp, updateApp loc.Locator) *builder.Phase {
 	root := builder.NewPhase(storage.OperationPhase{
-		ID:          "bootstrap",
-		Description: "Bootstrap update operation on nodes",
+		ID:            "bootstrap",
+		Description:   "Bootstrap update operation on nodes",
+		LimitParallel: NumParallel(),
 	})
 	leadMaster := servers[0]
 	root.AddParallelRaw(storage.OperationPhase{
@@ -504,8 +506,9 @@ func (r targetUpdateStep) bootstrapPhase(servers []storage.UpdateServer, install
 
 func (r targetUpdateStep) bootstrapSELinuxPhase(servers []storage.UpdateServer, installedApp, updateApp loc.Locator) *builder.Phase {
 	root := builder.NewPhase(storage.OperationPhase{
-		ID:          "selinux-bootstrap",
-		Description: "Configure SELinux on nodes",
+		ID:            "selinux-bootstrap",
+		Description:   "Configure SELinux on nodes",
+		LimitParallel: NumParallel(),
 	})
 
 	for i, server := range servers {
@@ -602,8 +605,9 @@ func (r updateStep) runtimePhase() *builder.Phase {
 // configPhase returns phase that pulls system configuration on provided nodes
 func (r updateStep) configPhase(nodes []storage.Server) *builder.Phase {
 	root := builder.NewPhase(storage.OperationPhase{
-		ID:          "config",
-		Description: "Update system configuration on nodes",
+		ID:            "config",
+		Description:   "Update system configuration on nodes",
+		LimitParallel: NumParallel(),
 	})
 	for i, node := range nodes {
 		root.AddParallelRaw(storage.OperationPhase{
@@ -647,8 +651,9 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 	// Shutdown etcd
 	// Move data directory to backup location
 	shutdownEtcd := builder.NewPhase(storage.OperationPhase{
-		ID:          "shutdown",
-		Description: "Shutdown etcd cluster",
+		ID:            "shutdown",
+		Description:   "Shutdown etcd cluster",
+		LimitParallel: etcdNumParallel,
 	})
 	shutdownEtcd.AddWithDependency(
 		builder.DependencyForServer(backupEtcd, leadMaster),
@@ -669,8 +674,9 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 	// Replace configuration and data directories, for new version of etcd
 	// relaunch etcd on temporary port
 	upgradeServers := builder.NewPhase(storage.OperationPhase{
-		ID:          "upgrade",
-		Description: "Upgrade etcd servers",
+		ID:            "upgrade",
+		Description:   "Upgrade etcd servers",
+		LimitParallel: etcdNumParallel,
 	})
 	upgradeServers.AddWithDependency(
 		builder.DependencyForServer(shutdownEtcd, leadMaster),
@@ -703,8 +709,9 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 	// restart master servers
 	// Rolling restart of master servers. ETCD outage ends here
 	restartMasters := builder.NewPhase(storage.OperationPhase{
-		ID:          "restart",
-		Description: "Restart etcd servers",
+		ID:            "restart",
+		Description:   "Restart etcd servers",
+		LimitParallel: etcdNumParallel,
 	})
 	restartMasters.AddWithDependency(
 		builder.DependencyForServer(migrateData, leadMaster),
@@ -858,8 +865,9 @@ func (r updateStep) mastersPhase(leadMaster storage.UpdateServer, otherMasters [
 
 func (r updateStep) nodesPhase(leadMaster storage.UpdateServer, nodes []storage.UpdateServer) *builder.Phase {
 	root := builder.NewPhase(storage.OperationPhase{
-		ID:          "nodes",
-		Description: "Update regular nodes",
+		ID:            "nodes",
+		Description:   "Update regular nodes",
+		LimitParallel: r.userConfig.ParallelWorkers,
 	})
 	for i, server := range nodes {
 		node := nodePhase(server.Server, "Update system software on node %q")
@@ -1004,6 +1012,8 @@ type updateStep struct {
 	supportsTaints bool
 	// openEBSEnabled specifies whether openEBS application is enabled and should be updated
 	openEBSEnabled bool
+	// userConfig specifies additional configuration attributes
+	userConfig UserConfig
 }
 
 type etcdVersion struct {

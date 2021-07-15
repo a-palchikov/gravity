@@ -27,7 +27,7 @@ import (
 
 	"github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/constants"
-	"github.com/gravitational/gravity/lib/fsm"
+	"github.com/gravitational/gravity/lib/defaults"
 	libfsm "github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/install"
 	"github.com/gravitational/gravity/lib/loc"
@@ -44,6 +44,7 @@ import (
 	"github.com/gravitational/gravity/lib/update"
 	clusterupdate "github.com/gravitational/gravity/lib/update/cluster"
 	"github.com/gravitational/gravity/lib/update/cluster/versions"
+	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/gravity/lib/utils/cli"
 	"github.com/gravitational/gravity/lib/utils/helm"
 
@@ -151,13 +152,14 @@ func newClusterUpdater(
 		unattended:    !config.manual,
 		values:        config.values,
 		force:         config.force,
+		userConfig:    config.userConfig,
 	}
 
 	if err := checkStatus(ctx, localEnv, config.force); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	updater, err := newUpdater(ctx, localEnv, updateEnv, init, &config.userConfig)
+	updater, err := newUpdater(ctx, localEnv, updateEnv, init)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -465,7 +467,7 @@ func (r *clusterInitializer) validate(localEnv *localenv.LocalEnvironment, clust
 	if err := checkCanUpdate(clusterEnv.ClusterPackages, installedRuntimeAppVersion, updateRuntimeAppVersion); err != nil {
 		return trace.Wrap(err)
 	}
-	if err := r.checkRuntimeEnvironment(localEnv, cluster, operator); err != nil {
+	if err := r.checkRuntimeEnvironment(localEnv, cluster, clusterEnv.Operator); err != nil {
 		return trace.Wrap(err)
 	}
 	r.updateLoc = updateApp.Package
@@ -525,23 +527,9 @@ func (r clusterInitializer) newOperationPlan(
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	clusterEnv *localenv.ClusterEnvironment,
 	leader *storage.Server,
-	userConfig interface{},
 ) (*storage.OperationPlan, error) {
-	var uc clusterupdate.UserConfig
-	if userConfig != nil {
-		c, ok := userConfig.(*clusterupdate.UserConfig)
-		if !ok {
-			// BUG: the passed in config is not of the expected type
-			// log and act as if not configured.
-			log.WithError(trace.BadParameter("unexpected userConfig")).Warn("BUG: passed in user config is not the expected type")
-		}
-		if c != nil {
-			uc = *c
-		}
-	}
-
 	plan, err := clusterupdate.InitOperationPlan(
-		ctx, localEnv, updateEnv, clusterEnv, operation.Key(), leader, uc,
+		ctx, localEnv, updateEnv, clusterEnv, operation.Key(), leader, r.userConfig,
 	)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -589,6 +577,7 @@ type clusterInitializer struct {
 	unattended    bool
 	values        []byte
 	force         bool
+	userConfig    clusterupdate.UserConfig
 }
 
 func getRuntimeAppVersion(apps app.Applications, loc loc.Locator) (*semver.Version, error) {
