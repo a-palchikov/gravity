@@ -39,11 +39,13 @@ import (
 	"github.com/gravitational/teleport/lib/service"
 	teleservices "github.com/gravitational/teleport/lib/services"
 	teleutils "github.com/gravitational/teleport/lib/utils"
+	"github.com/gravitational/trace"
 
 	"github.com/coreos/go-semver/semver"
-	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/check.v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type ProcessSuite struct{}
@@ -328,160 +330,158 @@ type importerSuite struct {
 }
 
 func TestReconcilesLabels(t *testing.T) {
-	type args struct {
-		currentLabels  map[string]string
-		requiredLabels map[string]string
-	}
 	tests := []struct {
 		name           string
-		args           args
+		node           v1.Node
+		requiredLabels map[string]string
 		expectedLabels map[string]string
-		needUpdate     bool
 	}{
 		{
 			name: "reconciliation mode = disabled. Different labels",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: defaults.ReconcileModeDisabled,
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: defaults.ReconcileModeDisabled,
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeDisabled,
 			},
-			needUpdate: false,
 		},
 		{
 			name: "reconciliation mode = enabled. Different labels",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
-					"label1":                          "1",
-					"label2":                          "1",
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
+				"label1":                          "1",
+				"label2":                          "1",
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
 				"label1":                          "value1",
 				"label2":                          "value2",
 			},
-			needUpdate: true,
 		},
 		{
 			name: "reconciliation mode = enabled. Same labels",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
-					"label1":                          "value1",
-					"label2":                          "value2",
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
+				"label1":                          "value1",
+				"label2":                          "value2",
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnabled,
 				"label1":                          "value1",
 				"label2":                          "value2",
 			},
-			needUpdate: false,
 		},
 		{
 			name: "reconciliation mode = EnsureExists. Different labels",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
 				"label1":                          "value1",
 				"label2":                          "value2",
 			},
-			needUpdate: true,
 		},
 		{
 			name: "reconciliation mode = EnsureExists. Different value of labels and no change is expected.",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
-					"label1":                          "1",
-					"label2":                          "2",
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
+				"label1":                          "1",
+				"label2":                          "2",
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
 				"label1":                          "1",
 				"label2":                          "2",
 			},
-			needUpdate: false,
 		},
 		{
 			name: "reconciliation mode is empty. Same labels",
-			args: args{
-				currentLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				"label1": "value1",
+				"label2": "value2",
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
 				"label1":                          "value1",
 				"label2":                          "value2",
 			},
-			needUpdate: true,
 		},
 		{
 			name: "reconciliation mode is incorrect. Different value of labels and no change is expected",
-			args: args{
-				currentLabels: map[string]string{
-					defaults.KubernetesReconcileLabel: "Incorrect",
-					"label1":                          "1",
-					"label2":                          "2",
-				},
-				requiredLabels: map[string]string{
-					"label1": "value1",
-					"label2": "value2",
-				},
+			node: nodeWithLabels(map[string]string{
+				defaults.KubernetesReconcileLabel: "Incorrect",
+				"label1":                          "1",
+				"label2":                          "2",
+			}),
+			requiredLabels: map[string]string{
+				"label1": "value1",
+				"label2": "value2",
 			},
 			expectedLabels: map[string]string{
 				defaults.KubernetesReconcileLabel: defaults.ReconcileModeEnsureExists,
 				"label1":                          "1",
 				"label2":                          "2",
 			},
-			needUpdate: true,
 		},
 	}
-	logger := logrus.New()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			labels, needUpdate := reconcileLabels(logger, tt.args.currentLabels, tt.args.requiredLabels)
-			if !reflect.DeepEqual(labels, tt.expectedLabels) {
-				t.Errorf("reconcileLabels() labels = %v, want %v", labels, tt.expectedLabels)
+			logger := logrus.WithField("test", tt.name)
+			patcher := &testPatcher{labels: tt.node.Labels}
+			err := reconcileNode(context.Background(), tt.requiredLabels, tt.node, patcher, logger)
+			if err != nil {
+				t.Errorf("failed to reconcile node: %v", err)
 			}
-			if needUpdate != tt.needUpdate {
-				t.Errorf("reconcileLabels() needUpdate = %v, want %v", needUpdate, tt.needUpdate)
+			if !reflect.DeepEqual(patcher.labels, tt.expectedLabels) {
+				t.Errorf("reconcileLabels() labels = %v, want %v", patcher.labels, tt.expectedLabels)
 			}
 		})
+	}
+}
+
+func (r *testPatcher) patch(ctx context.Context, node v1.Node) error {
+	r.labels = node.ObjectMeta.Labels
+	return nil
+}
+
+type testPatcher struct {
+	labels map[string]string
+}
+
+func nodeWithLabels(labels map[string]string) v1.Node {
+	return v1.Node{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Node",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node",
+			Labels: labels,
+		},
 	}
 }

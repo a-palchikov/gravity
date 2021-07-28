@@ -32,10 +32,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
-
-	jsonpatch "github.com/evanphx/json-patch"
-
 	"github.com/gravitational/gravity/lib/app"
 	apphandler "github.com/gravitational/gravity/lib/app/handler"
 	appservice "github.com/gravitational/gravity/lib/app/service"
@@ -76,6 +72,10 @@ import (
 	web "github.com/gravitational/gravity/lib/webapi"
 	"github.com/gravitational/gravity/lib/webapi/ui"
 
+	"github.com/gravitational/license/authority"
+	"github.com/gravitational/rigging"
+	"github.com/gravitational/roundtrip"
+	"github.com/gravitational/teleport"
 	telelib "github.com/gravitational/teleport/lib"
 	teleauth "github.com/gravitational/teleport/lib/auth"
 	telecfg "github.com/gravitational/teleport/lib/config"
@@ -86,19 +86,18 @@ import (
 	teleservices "github.com/gravitational/teleport/lib/services"
 	teleutils "github.com/gravitational/teleport/lib/utils"
 	teleweb "github.com/gravitational/teleport/lib/web"
+	"github.com/gravitational/trace"
 
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/gravitational/license/authority"
-	"github.com/gravitational/rigging"
-	"github.com/gravitational/roundtrip"
-	"github.com/gravitational/teleport"
-	"github.com/gravitational/trace"
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/julienschmidt/httprouter"
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/kubernetes"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 type Process struct {
@@ -721,34 +720,43 @@ func (p *Process) reconcileNodeLabels(ctx context.Context, client *kubernetes.Cl
 		return trace.Wrap(err)
 	}
 	for ip, node := range nodes {
-		if err := p.reconcileNode(ctx, client, *cluster, ip, node); err != nil {
-			p.WithError(err).Errorf("Failed to reconcile labels for node %v/%v.",
-				node.Name, ip)
+		server, err := cluster.ClusterState.FindServerByIP(ip)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		profile, err := cluster.App.Manifest.NodeProfiles.ByName(server.Role)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		logger := p.FieldLogger.WithFields(logrus.Fields{
+			"node": node.Name,
+			"IP":   ip,
+		})
+		patcher := newNodePatcher(client.CoreV1().Nodes(), node, logger)
+		if err := reconcileNode(ctx, server.GetNodeLabels(profile.Labels), node, patcher, logger); err != nil {
+			logger.WithError(err).Error("Failed to reconcile labels.")
 		}
 	}
 	return nil
 }
 
-func (p *Process) reconcileNode(ctx context.Context, client *kubernetes.Clientset, cluster ops.Site, ip string, node v1.Node) error {
-	server, err := cluster.ClusterState.FindServerByIP(ip)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	profile, err := cluster.App.Manifest.NodeProfiles.ByName(server.Role)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	oldData, err := json.Marshal(node)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	requiredLabels := server.GetNodeLabels(profile.Labels)
+func reconcileNode(ctx context.Context, requiredLabels map[string]string, node v1.Node, patcher nodePatcher, logger logrus.FieldLogger) error {
 	needUpdate := false
-	node.Labels, needUpdate = reconcileLabels(p, node.Labels, requiredLabels)
+	node.Labels, needUpdate = reconcileLabels(node.Labels, requiredLabels, logger)
 	if !needUpdate {
 		return nil
+	}
+	return patcher.patch(ctx, node)
+}
+
+type nodePatcher interface {
+	patch(ctx context.Context, node v1.Node) error
+}
+
+func (r *nodePatcherImpl) patch(ctx context.Context, node v1.Node) error {
+	oldData, err := json.Marshal(r.node)
+	if err != nil {
+		return trace.Wrap(err)
 	}
 	newData, err := json.Marshal(node)
 	if err != nil {
@@ -758,14 +766,28 @@ func (p *Process) reconcileNode(ctx context.Context, client *kubernetes.Clientse
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	p.Infof("Patching node %v/%v: %s", node.Name, ip, string(patchData))
-	if _, err := client.CoreV1().Nodes().Patch(ctx, node.Name, types.MergePatchType, patchData, metav1.PatchOptions{}); err != nil {
+	r.logger.WithField("patch", string(patchData)).Infof("Patch node.")
+	if _, err := r.client.Patch(ctx, node.Name, types.MergePatchType, patchData, metav1.PatchOptions{}); err != nil {
 		return rigging.ConvertError(err)
 	}
 	return nil
 }
 
-func reconcileLabels(logger logrus.FieldLogger, currentLabels, requiredLabels map[string]string) (map[string]string, bool) {
+func newNodePatcher(client corev1.NodeInterface, node v1.Node, logger logrus.FieldLogger) *nodePatcherImpl {
+	return &nodePatcherImpl{
+		client: client,
+		logger: logger,
+		node:   node,
+	}
+}
+
+type nodePatcherImpl struct {
+	logger logrus.FieldLogger
+	client corev1.NodeInterface
+	node   v1.Node
+}
+
+func reconcileLabels(currentLabels, requiredLabels map[string]string, logger logrus.FieldLogger) (map[string]string, bool) {
 	labels := make(map[string]string)
 	for key, value := range currentLabels {
 		labels[key] = value
