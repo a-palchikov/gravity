@@ -33,6 +33,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type RegistryMeta interface {
+	URL() string
+	Addr() string
+}
+
 // RegistryInfo contains information about connecting to a registry.
 type RegistryInfo struct {
 	// Address stores the address of the registry as host:port
@@ -41,8 +46,13 @@ type RegistryInfo struct {
 	Protocol string
 }
 
-// GetURL returns the url for current registry
-func (i *RegistryInfo) GetURL() string {
+// Addr returns the underlying registry address
+func (i *RegistryInfo) Addr() string {
+	return i.Address
+}
+
+// URL returns the url for the underlying registry
+func (i *RegistryInfo) URL() string {
 	return fmt.Sprintf("%s://%s", i.Protocol, i.Address)
 }
 
@@ -140,7 +150,7 @@ func (h *Synchronizer) ImageExists(ctx context.Context, registryURL, repository,
 }
 
 // PullAndExportImages pulls and pushes the list of specified images into the registry
-func (h *Synchronizer) PullAndExportImages(ctx context.Context, images []string, reg RegistryInfo, forcePull bool, parallel int) error {
+func (h *Synchronizer) PullAndExportImages(ctx context.Context, images []string, reg RegistryMeta, forcePull bool, parallel int) error {
 	group, ctx := run.WithContext(ctx, run.WithParallel(parallel))
 	for i := range images {
 		image := images[i]
@@ -154,7 +164,7 @@ func (h *Synchronizer) PullAndExportImages(ctx context.Context, images []string,
 	return nil
 }
 
-func (h *Synchronizer) pullAndExportImageIfNeeded(ctx context.Context, image string, reg RegistryInfo, forcePull bool) error {
+func (h *Synchronizer) pullAndExportImageIfNeeded(ctx context.Context, image string, reg RegistryMeta, forcePull bool) error {
 	if forcePull {
 		return h.pullAndPush(image, reg, true)
 	}
@@ -173,26 +183,26 @@ func (h *Synchronizer) pullAndExportImageIfNeeded(ctx context.Context, image str
 	return trace.Wrap(h.pullAndPush(image, reg, !present))
 }
 
-func (h *Synchronizer) checkImageInRegistry(ctx context.Context, image string, reg RegistryInfo) (bool, error) {
+func (h *Synchronizer) checkImageInRegistry(ctx context.Context, image string, reg RegistryMeta) (bool, error) {
 	parsedImage, err := loc.ParseDockerImage(image)
 	if err != nil {
 		return false, trace.Wrap(err)
 	}
-	exists, err := h.ImageExists(ctx, reg.GetURL(), parsedImage.Repository, parsedImage.Tag)
+	exists, err := h.ImageExists(ctx, reg.URL(), parsedImage.Repository, parsedImage.Tag)
 	if err != nil {
 		return false, trace.Wrap(err)
 	}
 	return exists, nil
 }
 
-func (h *Synchronizer) pullAndPush(image string, reg RegistryInfo, needPull bool) error {
+func (h *Synchronizer) pullAndPush(image string, reg RegistryMeta, needPull bool) error {
 	if needPull {
 		err := h.dockerPuller.Pull(image)
 		if err != nil {
 			return trace.Wrap(err)
 		}
 	}
-	return trace.Wrap(h.Push(image, reg.Address))
+	return trace.Wrap(h.Push(image, reg.Addr()))
 }
 
 // ImageTags returns the list of tags for specified image from the registry

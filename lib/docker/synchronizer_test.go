@@ -14,15 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package test
+package docker
 
 import (
 	"context"
 	"fmt"
 	"sort"
-	"testing"
 
-	"github.com/gravitational/gravity/lib/docker"
+	"github.com/gravitational/gravity/lib/docker/test"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/utils"
 
@@ -31,30 +30,28 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-func TestDocker(t *testing.T) { TestingT(t) }
-
 var _ = Suite(&DockerSuite{})
 
 // Set up a separate Suite for this test so we can use SetUp/TearDown phases
 type DockerSuite struct {
 	client   *dockerapi.Client
-	helper   *docker.Synchronizer
-	src, dst *Registry
+	helper   *Synchronizer
+	src, dst test.Registry
 }
 
 func (s *DockerSuite) SetUpTest(c *C) {
 	var err error
-	s.client, err = docker.NewClientFromEnv()
+	s.client, err = NewClientFromEnv()
 	c.Assert(err, IsNil)
-	s.helper = docker.NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
+	s.helper = NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
 	// Set up source and destination registries
-	s.src = NewRegistry(c.MkDir(), s.helper, c)
-	s.dst = NewRegistry(c.MkDir(), s.helper, c)
+	s.src = newTestRegistry(c.MkDir(), s.helper, c)
+	s.dst = newTestRegistry(c.MkDir(), s.helper, c)
 }
 
 func (s *DockerSuite) TearDownTest(*C) {
-	s.src.r.Close()
-	s.dst.r.Close()
+	s.src.Close()
+	s.dst.Close()
 }
 
 func (s *DockerSuite) listTags(repository string, c *C) (tags map[string]bool) {
@@ -109,9 +106,9 @@ func (s *DockerSuite) TestPullAndPushImages(c *C) {
 	// Setup
 	const dockerImageSize = 6
 
-	dockerImages := GenerateDockerImages(s.client, imageRepository, dockerImageSize, c)
+	dockerImages := test.GenerateDockerImages(s.client, imageRepository, dockerImageSize, c)
 	defer s.removeImages(dockerImages)
-	defer s.removeTaggedImages(s.src.info.Address, dockerImages)
+	defer s.removeTaggedImages(s.src.Addr(), dockerImages)
 
 	// the first 3 docker images are pushed to both registries
 	var pushedDockerTags []string
@@ -129,8 +126,8 @@ func (s *DockerSuite) TestPullAndPushImages(c *C) {
 		unpushedDockerTags = append(unpushedDockerTags, image.Tag)
 	}
 
-	allDockerTags, exportedImages := splitAsTagsAndImages(dockerImages, s.src.r.Addr())
-	srcImageRepository := fmt.Sprintf("%s/%s", s.src.r.Addr(), imageRepository)
+	allDockerTags, exportedImages := splitAsTagsAndImages(dockerImages, s.src.Addr())
+	srcImageRepository := fmt.Sprintf("%s/%s", s.src.Addr(), imageRepository)
 	localImageTags := s.listTags(srcImageRepository, c)
 
 	// generated docker images should not be in the local docker registry
@@ -141,19 +138,19 @@ func (s *DockerSuite) TestPullAndPushImages(c *C) {
 	}
 
 	// all docker images should be in the source docker registry
-	srcTags, err := s.helper.ImageTags(context.Background(), s.src.info.GetURL(), imageRepository)
+	srcTags, err := s.helper.ImageTags(context.Background(), s.src.URL(), imageRepository)
 	c.Assert(err, IsNil)
 	sort.Strings(srcTags)
 	c.Assert(srcTags, DeepEquals, allDockerTags)
 
 	// only pushed docker images should be in the target docker registry
-	dstTags, err := s.helper.ImageTags(context.Background(), s.dst.info.GetURL(), imageRepository)
+	dstTags, err := s.helper.ImageTags(context.Background(), s.dst.URL(), imageRepository)
 	c.Assert(err, IsNil)
 	sort.Strings(dstTags)
 	c.Assert(dstTags, DeepEquals, pushedDockerTags)
 
 	// export images
-	err = s.helper.PullAndExportImages(context.Background(), exportedImages, s.dst.info, false, dockerImageSize)
+	err = s.helper.PullAndExportImages(context.Background(), exportedImages, s.dst, false, dockerImageSize)
 	c.Assert(err, IsNil)
 
 	// Validate: this is where actual validation starts
@@ -173,7 +170,7 @@ func (s *DockerSuite) TestPullAndPushImages(c *C) {
 	}
 
 	// all docker images should be in the target docker registry
-	dstTags, err = s.helper.ImageTags(context.Background(), s.dst.info.GetURL(), imageRepository)
+	dstTags, err = s.helper.ImageTags(context.Background(), s.dst.URL(), imageRepository)
 	c.Assert(err, IsNil)
 	sort.Strings(dstTags)
 	c.Assert(dstTags, DeepEquals, allDockerTags)

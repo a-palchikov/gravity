@@ -18,31 +18,30 @@ package test
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	dockerapi "github.com/fsouza/go-dockerclient"
 	"github.com/gravitational/gravity/lib/archive"
-	"github.com/gravitational/gravity/lib/docker"
 	"github.com/gravitational/gravity/lib/loc"
 
 	"gopkg.in/check.v1"
 )
 
-// NewRegistry returns a new started docker registry
-func NewRegistry(dir string, s *docker.Synchronizer, c *check.C) *Registry {
-	config := docker.BasicConfiguration("127.0.0.1:0", dir)
-	r, err := docker.NewRegistry(config)
-	c.Assert(err, check.IsNil)
-	c.Assert(r.Start(), check.IsNil)
-	return &Registry{
-		r:   r,
-		dir: dir,
-		info: docker.RegistryInfo{
-			Address:  r.Addr(),
-			Protocol: "http",
-		},
-		helper: s,
-	}
+func NewRegistry(dir string, c *check.C) Registry {
+	return registryImpl.New(dir, c)
+}
+
+type RegistryFactory interface {
+	New(dir string, c *check.C) Registry
+}
+
+type Registry interface {
+	io.Closer
+
+	URL() string
+	Addr() string
+	Push(c *check.C, images ...loc.DockerImage)
 }
 
 // GenerateDockerImages generates a set of docker image (subject to size)
@@ -80,21 +79,8 @@ func GenerateDockerImage(client *dockerapi.Client, repository, tag string, c *ch
 	return image
 }
 
-func (r Registry) Addr() string {
-	return r.r.Addr()
+func SetRegistryFactory(f RegistryFactory) {
+	registryImpl = f
 }
 
-// Push pushes the set of images to the underlying registry
-func (r *Registry) Push(c *check.C, images ...loc.DockerImage) {
-	for _, image := range images {
-		c.Assert(r.helper.Push(image.String(), r.r.Addr()), check.IsNil)
-	}
-}
-
-// Registry is a test docker registry instance
-type Registry struct {
-	dir    string
-	r      *docker.Registry
-	info   docker.RegistryInfo
-	helper *docker.Synchronizer
-}
+var registryImpl RegistryFactory

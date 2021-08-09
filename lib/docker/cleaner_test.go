@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package test
+package docker
 
 import (
 	"context"
 	"sort"
 
-	"github.com/gravitational/gravity/lib/docker"
+	"github.com/gravitational/gravity/lib/docker/test"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/utils"
 
@@ -33,22 +33,22 @@ var _ = check.Suite(&CleanerSuite{})
 
 type CleanerSuite struct {
 	client      *dockerapi.Client
-	sync        *docker.Synchronizer
-	registry    *Registry
+	sync        *Synchronizer
+	registry    *testRegistry
 	registryDir string
 }
 
 func (s *CleanerSuite) SetUpTest(c *check.C) {
 	var err error
-	s.client, err = docker.NewClientFromEnv()
+	s.client, err = NewClientFromEnv()
 	c.Assert(err, check.IsNil)
-	s.sync = docker.NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
+	s.sync = NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
 	s.registryDir = c.MkDir()
-	s.registry = NewRegistry(s.registryDir, s.sync, c)
+	s.registry = newTestRegistry(s.registryDir, s.sync, c)
 }
 
 func (s *CleanerSuite) TearDownTest(*check.C) {
-	_ = s.registry.r.Close()
+	_ = s.registry.Close()
 }
 
 func (s *CleanerSuite) removeImages(images []loc.DockerImage) {
@@ -59,9 +59,9 @@ func (s *CleanerSuite) removeImages(images []loc.DockerImage) {
 }
 
 func (s *CleanerSuite) generateImages(c *check.C) ([]loc.DockerImage, []loc.DockerImage, []loc.DockerImage) {
-	cleanImages := GenerateDockerImages(s.client, "test/clean", 5, c)
-	validImages := GenerateDockerImages(s.client, "test/valid", 5, c)
-	invalidImages := GenerateDockerImages(s.client, "test/invalid", 6, c)
+	cleanImages := test.GenerateDockerImages(s.client, "test/clean", 5, c)
+	validImages := test.GenerateDockerImages(s.client, "test/valid", 5, c)
+	invalidImages := test.GenerateDockerImages(s.client, "test/invalid", 6, c)
 
 	allImages := make([]loc.DockerImage, 0)
 	allImages = append(allImages, cleanImages...)
@@ -100,7 +100,7 @@ func (s *CleanerSuite) TestCleanRegistry(c *check.C) {
 
 	s.registry.Push(c, allImages...)
 	// registry http server must be stopped since CleanRegistry requires direct access to the registry's root directory
-	_ = s.registry.r.Close()
+	_ = s.registry.Close()
 
 	requiredImageReferences := make([]string, 0)
 	for _, i := range requiredImages {
@@ -109,33 +109,33 @@ func (s *CleanerSuite) TestCleanRegistry(c *check.C) {
 	ctx := context.Background()
 
 	// delete unnecessary images
-	err := docker.CleanRegistry(ctx, s.registryDir, requiredImageReferences)
+	err := CleanRegistry(ctx, s.registryDir, requiredImageReferences)
 	c.Assert(err, check.IsNil)
 
 	// restart the registry http server to make sure all the required images are there
-	s.registry = NewRegistry(s.registryDir, s.sync, c)
+	s.registry = newTestRegistry(s.registryDir, s.sync, c)
 
 	for _, image := range requiredImages {
-		exists, err := s.sync.ImageExists(ctx, s.registry.info.GetURL(), image.Repository, image.Tag)
+		exists, err := s.sync.ImageExists(ctx, s.registry.URL(), image.Repository, image.Tag)
 		c.Assert(err, check.IsNil)
 		c.Assert(exists, check.Equals, true)
 	}
 	for _, image := range expectedDeletedImages {
-		exists, err := s.sync.ImageExists(ctx, s.registry.info.GetURL(), image.Repository, image.Tag)
+		exists, err := s.sync.ImageExists(ctx, s.registry.URL(), image.Repository, image.Tag)
 		c.Assert(err, check.IsNil)
 		c.Assert(exists, check.Equals, false)
 	}
-	validTags, err := s.sync.ImageTags(ctx, s.registry.info.GetURL(), "test/valid")
+	validTags, err := s.sync.ImageTags(ctx, s.registry.URL(), "test/valid")
 	c.Assert(err, check.IsNil)
 	sort.Strings(validTags)
 	c.Assert(validTags, check.DeepEquals, getTags(requiredImages, "test/valid"))
 
-	invalidTags, err := s.sync.ImageTags(ctx, s.registry.info.GetURL(), "test/invalid")
+	invalidTags, err := s.sync.ImageTags(ctx, s.registry.URL(), "test/invalid")
 	c.Assert(err, check.IsNil)
 	sort.Strings(invalidTags)
 	c.Assert(invalidTags, check.DeepEquals, getTags(requiredImages, "test/invalid"))
 
-	cleanedTags, err := s.sync.ImageTags(ctx, s.registry.info.GetURL(), "test/clean")
+	cleanedTags, err := s.sync.ImageTags(ctx, s.registry.URL(), "test/clean")
 	c.Assert(err, check.IsNil)
 	sort.Strings(cleanedTags)
 	c.Assert(cleanedTags, check.DeepEquals, getTags(requiredImages, "test/clean"))
