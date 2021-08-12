@@ -131,4 +131,5 @@ func (s *catalogSuite) TestDownload(c *check.C) {
 	// different package services so it will be different for them.
 	alpine.PackageEnvelope.Created = s.alpine.PackageEnvelope.Created
 	c.Assert(alpine, compare.DeepEquals, s.alpine)
+
 }
