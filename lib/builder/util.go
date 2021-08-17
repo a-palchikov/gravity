@@ -114,9 +114,9 @@ func versionsCompatible(teleVer, runtimeVer semver.Version) bool {
 		!teleVer.LessThan(runtimeVer)
 }
 
-// ensureCacheDir makes sure that the default local cache directory for
+// EnsureCacheDir makes sure that the default local cache directory for
 // the provided Gravity Hub exists.
-func ensureCacheDir(hubURL string) (dir string, err error) {
+func EnsureCacheDir(hubURL string) (dir string, err error) {
 	u, err := url.Parse(hubURL)
 	if err != nil {
 		return "", trace.Wrap(err)

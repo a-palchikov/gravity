@@ -143,13 +143,13 @@ func GetUpdatedDependencies(installed, update Application, installedManifest, up
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	installedDeps = installedManifest.FilterDependencies(installedDeps)
+	installedDeps = installedManifest.FilterDisabledDependencies(installedDeps)
 
 	updateDeps, err := GetDirectDeps(update)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	updateDeps = updateManifest.FilterDependencies(updateDeps)
+	updateDeps = updateManifest.FilterDisabledDependencies(updateDeps)
 
 	var updates []loc.Locator
 	for _, update := range updateDeps {

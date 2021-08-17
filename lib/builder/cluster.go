@@ -56,6 +56,8 @@ type ClusterRequest struct {
 	Vendor service.VendorRequest
 	// BaseImage is optional base image provided on the command line.
 	BaseImage string
+	// UpgradeVia lists intermediate runtime versions to embed inside the installer
+	UpgradeVia []string
 }
 
 // Build builds a cluster image according to the provided parameters.
@@ -96,11 +98,8 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = b.engine.SyncPackageCache(ctx, manifest, runtimeVersion)
+	err = b.engine.SyncPackageCache(ctx, locator, *manifest, *runtimeVersion)
 	if err != nil {
-		if trace.IsNotFound(err) {
-			return trace.NotFound("base image version %v not found", runtimeVersion)
-		}
 		return trace.Wrap(err)
 	}
 
@@ -129,7 +128,7 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	}
 
 	b.engine.NextStep("Packaging cluster image")
-	installer, err := b.engine.GenerateInstaller(manifest, *application)
+	installer, err := b.engine.GenerateInstaller(*manifest, *application)
 	if err != nil {
 		return trace.Wrap(err)
 	}

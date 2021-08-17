@@ -18,12 +18,16 @@ package cli
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gravitational/gravity/lib/app/service"
 	"github.com/gravitational/gravity/lib/builder"
+	"github.com/gravitational/gravity/lib/defaults"
+	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/utils"
 
 	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
 )
 
 // BuildParameters represents the arguments provided for building an application
@@ -48,6 +52,8 @@ type BuildParameters struct {
 	Vendor service.VendorRequest
 	// BaseImage sets base image for the cluster image
 	BaseImage string
+	// UpgradeVia lists intermediate runtime versions to embed inside the installer
+	UpgradeVia []string
 }
 
 // Level returns level at which the progress should be reported based on the CLI parameters.
@@ -63,7 +69,7 @@ func (p BuildParameters) Level() utils.ProgressLevel {
 // BuilderConfig makes builder config from CLI parameters.
 func (p BuildParameters) BuilderConfig() builder.Config {
 	return builder.Config{
-		StateDir:         p.StateDir,
+		// StateDir:         p.StateDir,
 		Insecure:         p.Insecure,
 		SkipVersionCheck: p.SkipVersionCheck,
 		Parallel:         p.Vendor.Parallel,
@@ -71,8 +77,17 @@ func (p BuildParameters) BuilderConfig() builder.Config {
 	}
 }
 
-func buildClusterImage(ctx context.Context, params BuildParameters) error {
-	clusterBuilder, err := builder.NewClusterBuilder(params.BuilderConfig())
+func buildClusterImage(ctx context.Context, params BuildParameters) (err error) {
+	config := params.BuilderConfig()
+	config.Syncer, err = builder.NewS3Syncer()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	config.Env, err = params.newBuildEnviron()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	clusterBuilder, err := builder.NewClusterBuilder(config)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -83,6 +98,7 @@ func buildClusterImage(ctx context.Context, params BuildParameters) error {
 		Overwrite:  params.Overwrite,
 		BaseImage:  params.BaseImage,
 		Vendor:     params.Vendor,
+		UpgradeVia: params.UpgradeVia,
 	})
 }
 
@@ -98,4 +114,33 @@ func buildApplicationImage(ctx context.Context, params BuildParameters) error {
 		Overwrite:  params.Overwrite,
 		Vendor:     params.Vendor,
 	})
+}
+
+func (p BuildParameters) newBuildEnviron() (*localenv.LocalEnvironment, error) {
+	// if state directory was specified explicitly, it overrides
+	// both cache directory and config directory as it's used as
+	// a special case only for building from local packages
+	if p.StateDir != "" {
+		logrus.Infof("Using package cache from %v.", p.StateDir)
+		return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+			StateDir:         p.StateDir,
+			LocalKeyStoreDir: p.StateDir,
+			Insecure:         p.Insecure,
+		})
+	}
+	// otherwise use default locations for cache / key store
+	cacheDir, err := builder.EnsureCacheDir(getRepository())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	logrus.Infof("Using package cache from %v.", cacheDir)
+	return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+		StateDir: cacheDir,
+		Insecure: p.Insecure,
+	})
+}
+
+// getRepository returns the default package source repository
+func getRepository() string {
+	return fmt.Sprintf("s3://%v", defaults.HubBucket)
 }

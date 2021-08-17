@@ -19,8 +19,11 @@ import (
 
 	"github.com/gravitational/gravity/e/lib/builder"
 	basebuilder "github.com/gravitational/gravity/lib/builder"
+	"github.com/gravitational/gravity/lib/defaults"
+	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/localenv/credentials"
 	"github.com/gravitational/gravity/tool/tele/cli"
+	"github.com/sirupsen/logrus"
 
 	"github.com/gravitational/trace"
 )
@@ -41,11 +44,20 @@ type buildParameters struct {
 	Credentials *credentials.Credentials
 }
 
-func (p buildParameters) repository() string {
+func (p buildParameters) repository(service credentials.Service) (repository string, err error) {
 	if p.Credentials != nil {
-		return p.Credentials.URL
+		return p.Credentials.URL, nil
 	}
-	return ""
+	// look for an cluster we're logged into
+	credentials, err := service.Current()
+	if err != nil && !trace.IsNotFound(err) {
+		return "", trace.Wrap(err)
+	}
+	// otherwise use the default one
+	if trace.IsNotFound(err) {
+		return defaults.DistributionOpsCenter, nil
+	}
+	return credentials.URL, nil
 }
 
 func (p buildParameters) generator() (basebuilder.Generator, error) {
@@ -58,16 +70,37 @@ func (p buildParameters) generator() (basebuilder.Generator, error) {
 }
 
 func (p buildParameters) builderConfig() (*basebuilder.Config, error) {
+	creds, err := credentials.New(credentials.Config{
+		LocalKeyStoreDir: p.StateDir,
+		Credentials:      p.Credentials,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	repository, err := p.repository(creds)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	env, err := p.newBuildEnviron(repository)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	pack, err := env.PackageService(repository)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	apps, err := env.AppService(repository, localenv.AppConfig{})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	config := p.BuilderConfig()
-	var err error
 	config.Generator, err = p.generator()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	config.Repository = p.repository()
+	config.Repository = repository
 	config.Credentials = p.Credentials
-	config.NewSyncer = builder.NewSyncer
-	config.GetRepository = builder.GetRepository
+	config.Syncer = basebuilder.NewPackSyncer(pack, apps, repository)
 	return &config, nil
 }
 
@@ -87,5 +120,31 @@ func buildClusterImage(ctx context.Context, params buildParameters) error {
 		Overwrite:  params.Overwrite,
 		BaseImage:  params.BaseImage,
 		Vendor:     params.Vendor,
+	})
+}
+
+func (p buildParameters) newBuildEnviron(repository string) (*localenv.LocalEnvironment, error) {
+	// if state directory was specified explicitly, it overrides
+	// both cache directory and config directory as it's used as
+	// a special case only for building from local packages
+	if p.StateDir != "" {
+		logrus.Infof("Using package cache from %v.", p.StateDir)
+		return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+			StateDir:         p.StateDir,
+			LocalKeyStoreDir: p.StateDir,
+			Insecure:         p.Insecure,
+			Credentials:      p.Credentials,
+		})
+	}
+	// otherwise use default locations for cache / key store
+	cacheDir, err := basebuilder.EnsureCacheDir(repository)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	logrus.Infof("Using package cache from %v.", cacheDir)
+	return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
+		StateDir:    cacheDir,
+		Insecure:    p.Insecure,
+		Credentials: p.Credentials,
 	})
 }

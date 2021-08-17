@@ -27,6 +27,16 @@ import (
 	"gopkg.in/check.v1"
 )
 
+// CheckDocker checks whether the host has docker available and skips
+// the current test otherwise
+func CheckDocker(c *check.C) *dockerapi.Client {
+	client, err := NewClientFromEnv()
+	if err != nil {
+		c.Skip(fmt.Sprint("This test requires docker:", err))
+	}
+	return client
+}
+
 // GenerateTestDockerImage generates a test docker image in the specified repository and with the given
 // tag
 func GenerateTestDockerImage(client *dockerapi.Client, repoName, tag string, c *check.C) loc.DockerImage {

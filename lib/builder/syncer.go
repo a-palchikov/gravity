@@ -30,53 +30,39 @@ import (
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
-	"github.com/gravitational/trace"
 
 	"github.com/coreos/go-semver/semver"
+	"github.com/gravitational/trace"
 )
 
 // Syncer synchronizes the local package cache from a (remote) repository
 type Syncer interface {
 	// Sync makes sure that local cache has all required dependencies for the
 	// selected runtime
-	Sync(context.Context, *Engine, *schema.Manifest, *semver.Version) error
+	Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error
 }
 
-// NewSyncerFunc defines function that creates syncer for a builder
-type NewSyncerFunc func(*Engine) (Syncer, error)
-
-// NewSyncer returns a new syncer instance for the provided builder
-//
-// Satisfies NewSyncerFunc type.
-func NewSyncer(b *Engine) (Syncer, error) {
-	return newS3Syncer()
-}
-
-// s3Syncer synchronizes local package cache with S3 bucket
-type s3Syncer struct {
+// S3Syncer synchronizes local package cache with S3 bucket
+type S3Syncer struct {
 	// hub provides access to runtimes stored in S3 bucket
 	hub hub.Hub
 }
 
-// newS3Syncer returns a syncer that syncs packages with S3 bucket
-func newS3Syncer() (*s3Syncer, error) {
+// NewS3Syncer returns a syncer that syncs packages with S3 bucket
+func NewS3Syncer() (*S3Syncer, error) {
 	hub, err := hub.New(hub.Config{})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return &s3Syncer{
+	return &S3Syncer{
 		hub: hub,
 	}, nil
 }
 
 // Sync makes sure that local cache has all required dependencies for the
 // selected runtime
-func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, manifest *schema.Manifest, runtimeVersion *semver.Version) error {
-	tarball, err := s.hub.Get(loc.Locator{
-		Repository: defaults.SystemAccountOrg,
-		Name:       defaults.TelekubePackage,
-		Version:    runtimeVersion.String(),
-	})
+func (s *S3Syncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
+	tarball, err := s.hub.Get(application.WithVersion(runtimeVersion))
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -96,6 +82,7 @@ func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, manifest *schema.Ma
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer env.Close()
 	cacheApps, err := engine.Env.AppServiceLocal(localenv.AppConfig{})
 	if err != nil {
 		return trace.Wrap(err)
@@ -110,13 +97,10 @@ func (s *s3Syncer) Sync(ctx context.Context, engine *Engine, manifest *schema.Ma
 		SrcApp:      tarballApps,
 		DstPack:     engine.Env.Packages,
 		DstApp:      cacheApps,
-		Parallel:    engine.Parallel,
-		OnConflict:  libapp.GetDependencyConflictHandler(false),
+		Parallel:    engine.Config.Parallel,
+		Upsert:      true,
 	}
-	return puller.PullAppDeps(ctx, libapp.Application{
-		Package:  manifest.Locator(),
-		Manifest: *manifest,
-	})
+	return puller.PullAppDeps(ctx, appForRuntime(app, manifest, runtimeVersion))
 }
 
 // PackSyncer synchronizes local package cache with pack/apps services
@@ -136,24 +120,21 @@ func NewPackSyncer(pack pack.PackageService, apps libapp.Applications, repo stri
 }
 
 // Sync pulls dependencies from the package/app service not available locally
-func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, manifest *schema.Manifest, runtimeVersion *semver.Version) error {
+func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
 	cacheApps, err := engine.Env.AppServiceLocal(localenv.AppConfig{})
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	puller := libapp.Puller{
+		FieldLogger: log,
 		SrcPack:     s.pack,
 		SrcApp:      s.apps,
 		DstPack:     engine.Env.Packages,
 		DstApp:      cacheApps,
-		Parallel:    engine.Parallel,
-		FieldLogger: log,
+		Parallel:    engine.Config.Parallel,
 		OnConflict:  libapp.GetDependencyConflictHandler(false),
 	}
-	err = puller.PullAppDeps(ctx, libapp.Application{
-		Package:  manifest.Locator(),
-		Manifest: *manifest,
-	})
+	err = puller.PullAppDeps(ctx, appForRuntime(app, manifest, runtimeVersion))
 	if err != nil {
 		if utils.IsNetworkError(err) || trace.IsEOF(err) {
 			return trace.ConnectionProblem(err, "failed to download "+
@@ -163,4 +144,11 @@ func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, manifest *schema.
 		return trace.Wrap(err)
 	}
 	return nil
+}
+
+var application = loc.Locator{
+	Repository: defaults.SystemAccountOrg,
+	// TODO(dima): use constant from lib/pack (or lib/loc?)
+	Name:    "telekube",
+	Version: loc.ZeroVersion,
 }

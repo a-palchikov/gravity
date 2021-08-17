@@ -41,6 +41,24 @@ func VerifyPackages(packages pack.PackageService, expected []loc.Locator, c *che
 	c.Assert(packagesByName(result), compare.SortedSliceEquals, packagesByName(expected))
 }
 
+func VerifyPackagesWithLabels(packages pack.PackageService, expected PackagesWithLabels, c *check.C) {
+	var obtained PackagesWithLabels
+	pack.ForeachPackage(packages, func(e pack.PackageEnvelope) error {
+		labels := e.RuntimeLabels
+		if labels == nil {
+			// To compensate for package envelopes with nil labels
+			// when comparing
+			labels = make(map[string]string)
+		}
+		obtained = append(obtained, PackageWithLabels{
+			loc:    e.Locator,
+			labels: labels,
+		})
+		return nil
+	})
+	c.Assert(obtained, compare.SortedSliceEquals, expected)
+}
+
 func locators(envelopes []pack.PackageEnvelope) []loc.Locator {
 	out := make([]loc.Locator, 0, len(envelopes))
 	for _, env := range envelopes {
@@ -54,3 +72,31 @@ type packagesByName []loc.Locator
 func (r packagesByName) Len() int           { return len(r) }
 func (r packagesByName) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r packagesByName) Less(i, j int) bool { return r[i].String() < r[j].String() }
+
+// NewPackage creates a new package with optional labels
+func NewPackage(s string, labels ...string) PackageWithLabels {
+	if len(labels)%2 != 0 {
+		panic("number of labels must be even")
+	}
+	var m map[string]string
+	m = make(map[string]string)
+	for i := 0; i < len(labels); i += 2 {
+		m[labels[i]] = labels[i+1]
+	}
+	return PackageWithLabels{loc: loc.MustParseLocator(s), labels: m}
+}
+
+func (r PackagesWithLabels) Len() int { return len(r) }
+func (r PackagesWithLabels) Swap(i, j int) {
+	r[i], r[j] = r[j], r[i]
+}
+func (r PackagesWithLabels) Less(i, j int) bool {
+	return r[i].loc.String() < r[j].loc.String()
+}
+
+type PackagesWithLabels []PackageWithLabels
+
+type PackageWithLabels struct {
+	loc    loc.Locator
+	labels map[string]string
+}

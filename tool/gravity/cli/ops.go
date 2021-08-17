@@ -37,6 +37,7 @@ import (
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/gravity/tool/common"
 
+	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 )
 
@@ -90,6 +91,15 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 		return trace.Wrap(err)
 	}
 
+	installedRuntime := cluster.App.Manifest.Base()
+	if installedRuntime == nil {
+		return trace.BadParameter("failed to determine version of base image")
+	}
+	installedRuntimeVersion, err := installedRuntime.SemVer()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	app, err := tarballEnv.Apps.GetApp(*appPackage)
 	if err != nil {
 		return trace.Wrap(err)
@@ -125,7 +135,6 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 	}
 
 	env.PrintStep("Importing application %v v%v", appPackage.Name, appPackage.Version)
-
 	puller := libapp.Puller{
 		FieldLogger: log.WithField(trace.Component, "pull"),
 		SrcPack:     tarballEnv.Packages,
@@ -140,7 +149,7 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 		AppService:  tarballEnv.Apps,
 		Progress:    env,
 	}
-	if err := uploadApplicationUpdate(ctx, puller, syncer, imageServices, *app); err != nil {
+	if err := uploadApplicationUpdate(ctx, puller, syncer, imageServices, *app, *installedRuntimeVersion); err != nil {
 		return trace.Wrap(err)
 	}
 
@@ -166,8 +175,8 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 	return nil
 }
 
-func uploadApplicationUpdate(ctx context.Context, puller libapp.Puller, syncer libapp.Syncer, imageServices []docker.ImageService, app libapp.Application) error {
-	deps, err := getUploadDependencies(puller.SrcPack, puller.SrcApp, app)
+func uploadApplicationUpdate(ctx context.Context, puller libapp.Puller, syncer libapp.Syncer, imageServices []docker.ImageService, app libapp.Application, installedRuntimeVersion semver.Version) error {
+	deps, err := getUploadDependencies(puller.SrcPack, puller.SrcApp, app, installedRuntimeVersion)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -188,7 +197,7 @@ func uploadApplicationUpdate(ctx context.Context, puller libapp.Puller, syncer l
 	return nil
 }
 
-func getUploadDependencies(packages pack.PackageService, apps libapp.Applications, app libapp.Application) (*libapp.Dependencies, error) {
+func getUploadDependencies(packages pack.PackageService, apps libapp.Applications, app libapp.Application, installedRuntimeVersion semver.Version) (*libapp.Dependencies, error) {
 	deps, err := libapp.GetDependencies(libapp.GetDependenciesRequest{
 		Pack: packages,
 		Apps: apps,
@@ -197,7 +206,41 @@ func getUploadDependencies(packages pack.PackageService, apps libapp.Application
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	err = collectUpgradeDependencies(packages, apps, installedRuntimeVersion, deps)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return deps, nil
+}
+
+func collectUpgradeDependencies(packages pack.PackageService, apps libapp.Applications, installedRuntimeVersion semver.Version, deps *libapp.Dependencies) error {
+	// TODO(dima): use the manifest.SystemOptions.UpgradeVia paths to build the list of upgrade dependencies
+	return pack.ForeachPackage(packages, func(pkg pack.PackageEnvelope) error {
+		version, ok := pkg.RuntimeLabels[pack.PurposeRuntimeUpgrade]
+		if !ok {
+			return nil
+		}
+		runtimeVersion, err := semver.NewVersion(version)
+		if err != nil {
+			return trace.Wrap(err, "invalid semver %q for upgrade package %v",
+				version, pkg)
+		}
+		if installedRuntimeVersion.Compare(*runtimeVersion) > 0 {
+			// Do not consider packages for runtime version lower than
+			// or equal to the installed one
+			return nil
+		}
+		if pkg.Type == "" {
+			deps.Packages = append(deps.Packages, pkg)
+			return nil
+		}
+		app, err := apps.GetApp(pkg.Locator)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		deps.Apps = append(deps.Apps, *app)
+		return nil
+	})
 }
 
 func syncDependenciesWithCluster(ctx context.Context, imageServices []docker.ImageService, deps libapp.Dependencies, syncer libapp.Syncer) error {

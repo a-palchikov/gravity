@@ -37,9 +37,7 @@ type DockerSuite struct {
 }
 
 func (s *DockerSuite) SetUpTest(c *check.C) {
-	var err error
-	s.client, err = NewClientFromEnv()
-	c.Assert(err, check.IsNil)
+	s.client = CheckDocker(c)
 	s.helper = NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
 	// Set up source and destination registries
 	s.src = NewTestRegistry(c.MkDir(), s.helper, c)
