@@ -51,10 +51,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var log = logrus.WithField(trace.Component, "builder")
-
 // Config is the builder configuration
 type Config struct {
+	// Log specifies the logger
+	Log logrus.FieldLogger
 	// Env specifies the build environment
 	Env *localenv.LocalEnvironment
 	// Insecure disables client verification of the server TLS certificate chain
@@ -83,6 +83,9 @@ type Config struct {
 
 // CheckAndSetDefaults validates builder config and fills in defaults
 func (c *Config) CheckAndSetDefaults() error {
+	if c.Log == nil {
+		c.Log = logrus.WithField(trace.Component, "builder")
+	}
 	if c.Env == nil {
 		return trace.BadParameter("Buidler requires build environment")
 	}
@@ -110,8 +113,13 @@ func newEngine(config Config) (*Engine, error) {
 	if err := config.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
+	runtimeVersions, err := parseVersions(config.UpgradeVia)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	b := &Engine{
-		Config: config,
+		Config:     config,
+		UpgradeVia: runtimeVersions,
 	}
 	if err := b.initServices(); err != nil {
 		b.Close()
@@ -154,7 +162,7 @@ func (b *Engine) SelectRuntime(manifest *schema.Manifest) (*semver.Version, erro
 	}
 	// If runtime version is explicitly set in the manifest, use it.
 	if runtime.Version != loc.LatestVersion {
-		log.WithField("version", runtime.Version).Info("Using pinned runtime version.")
+		b.Log.WithField("version", runtime.Version).Info("Using pinned runtime version.")
 		b.PrintSubStep("Will use base image version %s set in manifest", runtime.Version)
 		return semver.NewVersion(runtime.Version)
 	}
@@ -164,19 +172,19 @@ func (b *Engine) SelectRuntime(manifest *schema.Manifest) (*semver.Version, erro
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	log.WithField("version", teleVersion).Info("Selected runtime version based on tele version.")
+	b.Log.WithField("version", teleVersion).Info("Selected runtime version based on tele version.")
 	b.PrintSubStep("Will use base image version %s", teleVersion)
 	return teleVersion, nil
 }
 
 // SyncPackageCache ensures that all system dependencies are present in
 // the local cache directory for the specified list of runtime versions
-func (b *Engine) SyncPackageCache(ctx context.Context, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version, intermediateVersions ...semver.Version) error {
+func (b *Engine) SyncPackageCache(ctx context.Context, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
 	apps, err := b.Env.AppServiceLocal(localenv.AppConfig{ExcludeDeps: libapp.AppsToExclude(manifest)})
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	for _, runtimeVersion := range append([]semver.Version{runtimeVersion}, intermediateVersions...) {
+	for _, runtimeVersion := range append([]semver.Version{runtimeVersion}, b.UpgradeVia...) {
 		b.NextStep("Syncing packages for %v", runtimeVersion)
 		if err := b.syncPackageCache(ctx, app, manifest, runtimeVersion, apps); err != nil {
 			return trace.Wrap(err, "failed to sync packages for runtime version %v", runtimeVersion)
@@ -192,11 +200,11 @@ func (b *Engine) syncPackageCache(ctx context.Context, app loc.Locator, manifest
 		return trace.Wrap(err)
 	}
 	if err == nil {
-		log.Info("Local package cache is up-to-date.")
+		b.Log.Info("Local package cache is up-to-date.")
 		b.NextStep("Local package cache is up-to-date")
 		return nil
 	}
-	log.Infof("Synchronizing package cache with %v.", b.Repository)
+	b.Log.Infof("Synchronizing package cache with %v.", b.Repository)
 	b.NextStep("Downloading dependencies from %v", b.Repository)
 	return b.Syncer.Sync(ctx, b, app, manifest, runtimeVersion)
 }
@@ -208,7 +216,7 @@ type VendorRequest struct {
 	// VendorDir is the directory to perform vendoring in.
 	VendorDir string
 	// Manifest is the image manifest.
-	Manifest *schema.Manifest
+	Manifest schema.Manifest
 	// Vendor is parameters of the vendorer.
 	Vendor service.VendorRequest
 }

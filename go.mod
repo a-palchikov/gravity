@@ -3,7 +3,7 @@ module github.com/gravitational/gravity
 go 1.13
 
 require (
-	cloud.google.com/go v0.56.0
+	cloud.google.com/go v0.60.0
 	github.com/MakeNowJust/heredoc v0.0.0-20171113091838-e9091a26100e // indirect
 	github.com/alecthomas/assert v0.0.0-20170929043011-405dbfeb8e38 // indirect
 	github.com/alecthomas/colour v0.1.0 // indirect
@@ -14,8 +14,8 @@ require (
 	github.com/boombuler/barcode v0.0.0-20161226211916-fe0f26ff6d26 // indirect
 	github.com/buger/goterm v0.0.0-20140416104154-af3f07dadc88
 	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/cloudflare/cfssl v0.0.0-20180726162950-56268a613adf
-	github.com/cloudfoundry/gosigar v1.1.1-0.20180406153506-1375283248c3
+	github.com/cloudflare/cfssl v1.6.0
+	github.com/cloudfoundry/gosigar v1.2.0
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd
 	github.com/coreos/etcd v3.3.25+incompatible
 	github.com/coreos/go-semver v0.3.0
@@ -36,7 +36,7 @@ require (
 	github.com/gofrs/flock v0.8.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/gokyle/hotp v0.0.0-20160218004637-c180d57d286b
-	github.com/google/certificate-transparency-go v0.0.0-00010101000000-000000000000 // indirect
+	github.com/google/certificate-transparency-go v1.1.1 // indirect
 	github.com/google/go-cmp v0.5.5
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/handlers v0.0.0-20151124211609-e96366d97736 // indirect
@@ -53,15 +53,14 @@ require (
 	github.com/gravitational/satellite v0.0.9-0.20210518231730-758163e22217
 	github.com/gravitational/tail v1.0.1
 	github.com/gravitational/teleport v3.2.17+incompatible
-	github.com/gravitational/trace v1.1.14
+	github.com/gravitational/trace v1.1.15
 	github.com/gravitational/ttlmap v0.0.0-20171116003245-91fd36b9004c
 	github.com/gravitational/version v0.0.2-0.20170324200323-95d33ece5ce1
 	github.com/gravitational/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/jonboulle/clockwork v0.2.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/kardianos/osext v0.0.0-20170510131534-ae77be60afb1 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
-	github.com/kylelemons/godebug v0.0.0-20170820004349-d65d576e9348
+	github.com/kylelemons/godebug v1.1.0
 	github.com/magefile/mage v1.9.0
 	github.com/mailgun/lemma v0.0.0-20160211003854-e8b0cd607f58
 	github.com/mailgun/metrics v0.0.0-20150124003306-2b3c4565aafd // indirect
@@ -72,7 +71,6 @@ require (
 	github.com/mdp/rsc v0.0.0-20160131164516-90f07065088d // indirect
 	github.com/miekg/dns v1.1.29
 	github.com/mitchellh/go-ps v1.0.0
-	github.com/mreiferson/go-httpclient v0.0.0-20160630210159-31f0106b4474 // indirect
 	github.com/nsf/termbox-go v0.0.0-20190325093121-288510b9734e // indirect
 	github.com/olekukonko/tablewriter v0.0.4
 	github.com/opencontainers/go-digest v1.0.0
@@ -81,7 +79,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/otp v0.0.0-20160912161815-54653902c20e // indirect
 	github.com/prometheus/alertmanager v0.20.0
-	github.com/prometheus/client_golang v1.7.1
+	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.10.0
 	github.com/russellhaering/gosaml2 v0.0.0-20170515204909-8908227c114a // indirect
 	github.com/russellhaering/goxmldsig v1.1.0 // indirect
@@ -94,10 +92,10 @@ require (
 	github.com/xtgo/set v1.0.0
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 	golang.org/x/net v0.0.0-20210224082022-3d97a244fca7
-	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887
+	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
 	google.golang.org/grpc v1.29.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
-	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 	helm.sh/helm/v3 v3.6.3
@@ -123,7 +121,7 @@ replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.14.25
 	github.com/beorn7/perks => github.com/beorn7/perks v0.0.0-20150223135152-b965b613227f
 	github.com/boltdb/bolt => github.com/gravitational/bolt v1.3.2-gravitational
-	github.com/cloudflare/cfssl => github.com/gravitational/cfssl v0.0.0-20180619163912-4b8305b36ad0
+	// github.com/cloudflare/cfssl => github.com/gravitational/cfssl v0.0.0-20180619163912-4b8305b36ad0
 	github.com/coreos/go-oidc => github.com/gravitational/go-oidc v0.0.1
 	github.com/coreos/go-semver => github.com/coreos/go-semver v0.2.0
 	github.com/coreos/go-systemd => github.com/coreos/go-systemd v0.0.0-20180202092358-40e2722dffea
@@ -137,11 +135,12 @@ replace (
 	github.com/go-openapi/strfmt => github.com/go-openapi/strfmt v0.19.2
 	github.com/go-openapi/swag => github.com/go-openapi/swag v0.18.0
 	github.com/golang/groupcache => github.com/golang/groupcache v0.0.0-20181024230925-c65c006176ff
-	github.com/google/certificate-transparency-go => github.com/gravitational/certificate-transparency-go v0.0.0-20180803094710-99d8352410cb
+	// github.com/google/certificate-transparency-go => github.com/gravitational/certificate-transparency-go v0.0.0-20180803094710-99d8352410cb
 	github.com/google/gofuzz => github.com/google/gofuzz v0.0.0-20150304233714-bbcb9da2d746
 	github.com/google/uuid => github.com/google/uuid v1.1.0
 	github.com/gophercloud/gophercloud => github.com/gophercloud/gophercloud v0.0.0-20181207171349-d3bcea3cf97e
 	github.com/gorilla/mux => github.com/gorilla/mux v1.7.0
+	github.com/gravitational/license => ../license
 	github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
 	github.com/json-iterator/go => github.com/json-iterator/go v1.1.5
 	github.com/julienschmidt/httprouter => github.com/julienschmidt/httprouter v1.1.0

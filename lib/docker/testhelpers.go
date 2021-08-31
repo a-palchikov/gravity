@@ -27,9 +27,9 @@ import (
 	"gopkg.in/check.v1"
 )
 
-// CheckDocker checks whether the host has docker available and skips
+// TestRequiresDocker checks whether the host has docker available and skips
 // the current test otherwise
-func CheckDocker(c *check.C) *dockerapi.Client {
+func TestRequiresDocker(c *check.C) *dockerapi.Client {
 	client, err := NewClientFromEnv()
 	if err != nil {
 		c.Skip(fmt.Sprint("This test requires docker:", err))
@@ -92,6 +92,11 @@ func NewTestRegistry(dir string, s *Synchronizer, c *check.C) *TestRegistry {
 // Close stops this registry instance and removes its resources
 func (r *TestRegistry) Close() error {
 	return r.r.Close()
+}
+
+// Addr returns the address the registry is serving on
+func (r *TestRegistry) Addr() string {
+	return r.r.Addr()
 }
 
 // Push pushes the specified images to the underlying registry

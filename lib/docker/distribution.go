@@ -158,7 +158,7 @@ func defaultContext() (context.Context, context.CancelFunc) {
 func newLogger() registrycontext.Logger {
 	logger := log.New()
 	logger.SetLevel(log.WarnLevel)
-	logger.SetHooks(make(log.LevelHooks))
+	logger.ReplaceHooks(make(log.LevelHooks))
 	hook, err := sysloghook.NewSyslogHook("", "", syslog.LOG_WARNING, "")
 	if err != nil {
 		logger.Out = os.Stderr

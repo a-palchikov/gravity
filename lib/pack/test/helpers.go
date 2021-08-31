@@ -17,12 +17,30 @@ limitations under the License.
 package test
 
 import (
+	"fmt"
+	"io"
+
 	"github.com/gravitational/gravity/lib/compare"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/pack"
 
 	"gopkg.in/check.v1"
 )
+
+// ListPackages dumps packages in the specified service to w
+func ListPackages(packages pack.PackageService, w io.Writer, c *check.C) {
+	repositories, err := packages.GetRepositories()
+	c.Assert(err, check.IsNil)
+	for _, r := range repositories {
+		envs, err := packages.GetPackages(r)
+		c.Assert(err, check.IsNil)
+		for _, p := range envs {
+			env, err := packages.ReadPackageEnvelope(p.Locator)
+			c.Assert(err, check.IsNil)
+			fmt.Fprintln(w, "Package: ", env.Locator, " with labels: ", env.RuntimeLabels)
+		}
+	}
+}
 
 // VerifyPackages ensures that the specified package service contains
 // the expected packages.
@@ -78,8 +96,7 @@ func NewPackage(s string, labels ...string) PackageWithLabels {
 	if len(labels)%2 != 0 {
 		panic("number of labels must be even")
 	}
-	var m map[string]string
-	m = make(map[string]string)
+	m := make(map[string]string)
 	for i := 0; i < len(labels); i += 2 {
 		m[labels[i]] = labels[i+1]
 	}

@@ -113,7 +113,7 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	stream, err := b.engine.Vendor(ctx, VendorRequest{
 		SourceDir: imageSource.Dir(),
 		VendorDir: vendorDir,
-		Manifest:  manifest,
+		Manifest:  manifest.WithBase(loc.Runtime.WithVersion(*runtimeVersion)),
 		Vendor:    req.Vendor,
 	})
 	if err != nil {

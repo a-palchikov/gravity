@@ -18,6 +18,7 @@ limitations under the License.
 package pack
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"time"
@@ -92,11 +93,19 @@ func (p *PackageEnvelope) HasLabels(labels map[string]string) bool {
 }
 
 func (p PackageEnvelope) String() string {
-	desc := fmt.Sprintf("%v %v", p.Locator.String(), humanize.Bytes(uint64(p.SizeBytes)))
+	var buf bytes.Buffer
+	fmt.Fprint(&buf, p.Locator.String(), " ", humanize.Bytes(uint64(p.SizeBytes)))
 	if p.Encrypted {
-		desc += " (encrypted)"
+		fmt.Fprint(&buf, " (encrypted)")
 	}
-	return desc
+	if len(p.RuntimeLabels) != 0 {
+		fmt.Fprint(&buf, " labels(")
+		for k, v := range p.RuntimeLabels {
+			fmt.Fprint(&buf, k, "=", v, ",")
+		}
+		fmt.Fprint(&buf, ")")
+	}
+	return buf.String()
 }
 
 // Options returns a list of options for this package envelope

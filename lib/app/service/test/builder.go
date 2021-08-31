@@ -27,6 +27,8 @@ import (
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 
+	"github.com/coreos/go-semver/semver"
+	"github.com/sirupsen/logrus"
 	check "gopkg.in/check.v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -40,6 +42,24 @@ type PackageRequest struct {
 	PackageSets []pack.PackageService
 	// Package describes the package to create
 	Package Package
+}
+
+// PackServices returns the list of package services from this request
+func (r AppRequest) PackServices() []pack.PackageService {
+	packServices := r.PackageSets
+	if len(packServices) == 0 {
+		packServices = append(packServices, r.Packages)
+	}
+	return packServices
+}
+
+// AppServices returns the list of application package services from this request
+func (r AppRequest) AppServices() []app.Applications {
+	appServices := r.AppSets
+	if len(appServices) == 0 {
+		appServices = append(appServices, r.Apps)
+	}
+	return appServices
 }
 
 // AppRequest describes an intent to create a test application package
@@ -173,35 +193,10 @@ type App struct {
 
 // CreateApplication creates a new test application as described by the given request
 func CreateApplication(req AppRequest, c *check.C) (app *app.Application) {
-	pkgDeps := make(map[loc.Locator]Package)
-	appDeps := make(map[loc.Locator]App)
-	if req.App.Base != nil {
-		collectBaseDependencies(*req.App.Base, pkgDeps, appDeps, c)
-	}
-	collectDependencies(req.App, pkgDeps, appDeps)
-	packServices := req.PackageSets
-	if len(packServices) == 0 {
-		packServices = append(packServices, req.Packages)
-	}
-	for _, pkg := range pkgDeps {
-		CreatePackage(PackageRequest{
-			Package:     pkg,
-			PackageSets: packServices,
-		}, c)
-	}
-	appServices := req.AppSets
-	if len(appServices) == 0 {
-		appServices = append(appServices, req.Apps)
-	}
-	for _, app := range appDeps {
-		data := CreatePackageData(ApplicationLayout(app, c), c)
-		for _, apps := range appServices {
-			_, err := apps.CreateApp(app.Manifest.Locator(), bytes.NewReader(data.Bytes()), app.Labels)
-			c.Assert(err, check.IsNil)
-		}
-	}
+	CreateApplicationDependencies(req, c)
+	logrus.Debug("Create app ", req.App.Manifest.Locator())
 	data := CreatePackageData(ApplicationLayout(req.App, c), c)
-	for _, apps := range appServices {
+	for _, apps := range req.AppServices() {
 		var err error
 		app, err = apps.CreateApp(req.App.Manifest.Locator(), bytes.NewReader(data.Bytes()), req.App.Labels)
 		c.Assert(err, check.IsNil)
@@ -209,8 +204,34 @@ func CreateApplication(req AppRequest, c *check.C) (app *app.Application) {
 	return app
 }
 
+// CreateApplicationDependencies creates application dependencies as described by the given request
+func CreateApplicationDependencies(req AppRequest, c *check.C) {
+	pkgDeps := make(map[loc.Locator]Package)
+	appDeps := make(map[loc.Locator]App)
+	if req.App.Base != nil {
+		appDeps[req.App.Base.Manifest.Locator()] = *req.App.Base
+		collectDependencies(*req.App.Base, pkgDeps, appDeps)
+	}
+	collectDependencies(req.App, pkgDeps, appDeps)
+	for _, pkg := range pkgDeps {
+		CreatePackage(PackageRequest{
+			Package:     pkg,
+			PackageSets: req.PackServices(),
+		}, c)
+	}
+	for _, app := range appDeps {
+		logrus.Debug("Create app ", app.Manifest.Locator())
+		data := CreatePackageData(ApplicationLayout(app, c), c)
+		for _, apps := range req.AppServices() {
+			_, err := apps.CreateApp(app.Manifest.Locator(), bytes.NewReader(data.Bytes()), app.Labels)
+			c.Assert(err, check.IsNil)
+		}
+	}
+}
+
 // CreatePackage creates a new test package as described by the given request
 func CreatePackage(req PackageRequest, c *check.C) (pkg *pack.PackageEnvelope) {
+	logrus.Debug("Create package ", req.Package.Loc)
 	items := req.Package.Items
 	if len(items) == 0 {
 		// Create a package with a test payload
@@ -234,6 +255,8 @@ func CreatePackage(req PackageRequest, c *check.C) (pkg *pack.PackageEnvelope) {
 var (
 	// RuntimeApplicationLoc specifies the default runtime application locator
 	RuntimeApplicationLoc = loc.MustParseLocator("gravitational.io/kubernetes:0.0.1")
+	// RuntimeApplicationVersion specifies the default semver of the runtime application
+	RuntimeApplicationVersion = mustSemVer(RuntimeApplicationLoc.SemVer())
 	// RuntimePackageLoc specifies the default runtime package locator
 	RuntimePackageLoc = loc.MustParseLocator("gravitational.io/planet:0.0.1")
 )
@@ -266,10 +289,13 @@ func RuntimeApplication(appLoc, runtimePackageLoc loc.Locator) *App {
 					ResourceVersion: appLoc.Version,
 				},
 			},
+			Dependencies: schema.Dependencies{
+				// Runtime application explicitly defaults to include the
+				// runtime package in the list of dependencies for legacy
+				// hub
+				Packages: []schema.Dependency{{Locator: runtimePackageLoc}},
+			},
 			SystemOptions: &schema.SystemOptions{
-				Runtime: &schema.Runtime{
-					Locator: loc.Runtime.WithLiteralVersion(appLoc.Version),
-				},
 				Dependencies: schema.SystemDependencies{
 					Runtime: &schema.Dependency{
 						Locator: runtimePackageLoc,
@@ -324,101 +350,17 @@ func DefaultClusterApplication(appLoc loc.Locator) *App {
 // and the runtime application
 func ClusterApplication(appLoc loc.Locator, base App) *App {
 	return &App{
-		Manifest: schema.Manifest{
-			Header: schema.Header{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       schema.KindCluster,
-					APIVersion: schema.APIVersionV2Cluster,
-				},
-				Metadata: schema.Metadata{
-					Repository:      appLoc.Repository,
-					Name:            appLoc.Name,
-					ResourceVersion: appLoc.Version,
-				},
-			},
-			Installer: &schema.Installer{
-				Flavors: schema.Flavors{
-					Items: []schema.Flavor{
-						{
-							Name: "one",
-							Nodes: []schema.FlavorNode{
-								{
-									Profile: "node",
-									Count:   1,
-								},
-							},
-						},
-					},
-				},
-			},
-			NodeProfiles: schema.NodeProfiles{
-				{
-					Name: "node",
-				},
-				{
-					Name: "kmaster",
-					Labels: map[string]string{
-						"node-role.kubernetes.io/master": "true",
-					},
-				},
-				{
-					Name: "knode",
-					Labels: map[string]string{
-						"node-role.kubernetes.io/node": "true",
-					},
-				},
-			},
-			Hooks: &schema.Hooks{
-				NodeAdding: &schema.Hook{
-					Type: schema.HookNodeAdding,
-					Job: `apiVersion: batch/v1
-kind: Job
-metadata:
-name: pre-join
-spec:
-template:
-  spec:
-    containers:
-      - name: hook
-	image: quay.io/gravitational/debian-tall:buster
-	command: ["/bin/echo", "Pre-join hook"]`,
-				},
-				NodeAdded: &schema.Hook{
-					Type: schema.HookNodeAdded,
-					Job: `apiVersion: batch/v1
-kind: Job
-metadata:
-name: post-join
-spec:
-template:
-  spec:
-    containers:
-      - name: hook
-	image: quay.io/gravitational/debian-tall:buster
-	command: ["/bin/echo", "Post-join hook"]`,
-				},
-				NetworkInstall: &schema.Hook{
-					Type: schema.HookNetworkInstall,
-					Job: `apiVersion: batch/v1
-kind: Job
-metadata:
-name: post-join
-spec:
-template:
-  spec:
-    containers:
-    - name: hook
-      image: quay.io/gravitational/debian-tall:buster
-      command: ["/bin/echo", "Install overlay network hook"]`,
-				},
-			},
-			SystemOptions: &schema.SystemOptions{
-				Runtime: &schema.Runtime{
-					Locator: base.Manifest.Locator(),
-				},
-			},
-		},
-		Base: &base,
+		Manifest: createClusterApplicationManifest(appLoc, base.Manifest.Locator()),
+		Base:     &base,
+	}
+}
+
+// ClusterApplicationWithRuntimePlaceholder creates a new cluster application that
+// depends on runtime application with a meta version - e.g. the runtime application
+// will be selected later from the available in a package service
+func ClusterApplicationWithRuntimePlaceholder(appLoc loc.Locator) *App {
+	return &App{
+		Manifest: createClusterApplicationManifest(appLoc, RuntimeApplicationLoc.WithLiteralVersion("0.0.0+latest")),
 	}
 }
 
@@ -487,6 +429,103 @@ func ApplicationLayout(app App, c *check.C) []*archive.Item {
 	}, app.Items...)
 }
 
+func createClusterApplicationManifest(appLoc, runtimeAppLoc loc.Locator) schema.Manifest {
+	return schema.Manifest{
+		Header: schema.Header{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       schema.KindCluster,
+				APIVersion: schema.APIVersionV2Cluster,
+			},
+			Metadata: schema.Metadata{
+				Repository:      appLoc.Repository,
+				Name:            appLoc.Name,
+				ResourceVersion: appLoc.Version,
+			},
+		},
+		Installer: &schema.Installer{
+			Flavors: schema.Flavors{
+				Items: []schema.Flavor{
+					{
+						Name: "one",
+						Nodes: []schema.FlavorNode{
+							{
+								Profile: "node",
+								Count:   1,
+							},
+						},
+					},
+				},
+			},
+		},
+		NodeProfiles: schema.NodeProfiles{
+			{
+				Name: "node",
+			},
+			{
+				Name: "kmaster",
+				Labels: map[string]string{
+					"node-role.kubernetes.io/master": "true",
+				},
+			},
+			{
+				Name: "knode",
+				Labels: map[string]string{
+					"node-role.kubernetes.io/node": "true",
+				},
+			},
+		},
+		Hooks: &schema.Hooks{
+			NodeAdding: &schema.Hook{
+				Type: schema.HookNodeAdding,
+				Job: `apiVersion: batch/v1
+kind: Job
+metadata:
+name: pre-join
+spec:
+template:
+  spec:
+    containers:
+      - name: hook
+        image: quay.io/gravitational/debian-tall:buster
+        command: ["/bin/echo", "Pre-join hook"]`,
+			},
+			NodeAdded: &schema.Hook{
+				Type: schema.HookNodeAdded,
+				Job: `apiVersion: batch/v1
+kind: Job
+metadata:
+name: post-join
+spec:
+template:
+  spec:
+    containers:
+      - name: hook
+        image: quay.io/gravitational/debian-tall:buster
+        command: ["/bin/echo", "Post-join hook"]`,
+			},
+			NetworkInstall: &schema.Hook{
+				Type: schema.HookNetworkInstall,
+				Job: `apiVersion: batch/v1
+kind: Job
+metadata:
+name: post-join
+spec:
+template:
+  spec:
+    containers:
+    - name: hook
+      image: quay.io/gravitational/debian-tall:buster
+      command: ["/bin/echo", "Install overlay network hook"]`,
+			},
+		},
+		SystemOptions: &schema.SystemOptions{
+			Runtime: &schema.Runtime{
+				Locator: runtimeAppLoc,
+			},
+		},
+	}
+}
+
 func createApplicationFromBinaryData(apps app.Applications, locator loc.Locator, data bytes.Buffer, c *check.C) *app.Application {
 	var labels map[string]string
 	app, err := apps.CreateApp(locator, &data, labels)
@@ -496,23 +535,19 @@ func createApplicationFromBinaryData(apps app.Applications, locator loc.Locator,
 	return app
 }
 
-func collectBaseDependencies(base App, pkgDeps map[loc.Locator]Package, appDeps map[loc.Locator]App, c *check.C) {
-	appDeps[base.Manifest.Locator()] = base
-	// Add runtime package to dependencies
-	runtimePackage, err := base.Manifest.DefaultRuntimePackage()
-	c.Assert(err, check.IsNil)
-	pkgDeps[*runtimePackage] = Package{
-		Loc: *runtimePackage,
-	}
-	collectDependencies(base, pkgDeps, appDeps)
-}
-
 func collectDependencies(app App, pkgDeps map[loc.Locator]Package, appDeps map[loc.Locator]App) {
 	collectManifestDependencies(app.Manifest, pkgDeps, appDeps)
 	overrideDependencies(app.Dependencies, pkgDeps, appDeps)
 }
 
 func collectManifestDependencies(m schema.Manifest, pkgDeps map[loc.Locator]Package, appDeps map[loc.Locator]App) {
+	// Add runtime package to dependencies if specified
+	runtimePackage, _ := m.DefaultRuntimePackage()
+	if runtimePackage != nil {
+		pkgDeps[*runtimePackage] = Package{
+			Loc: *runtimePackage,
+		}
+	}
 	for _, pkg := range m.Dependencies.Packages {
 		pkgDeps[pkg.Locator] = Package{
 			Loc: pkg.Locator,
@@ -531,4 +566,11 @@ func overrideDependencies(deps Dependencies, pkgDeps map[loc.Locator]Package, ap
 		appDeps[app.Manifest.Locator()] = app
 		collectDependencies(app, pkgDeps, appDeps)
 	}
+}
+
+func mustSemVer(version *semver.Version, err error) semver.Version {
+	if err != nil {
+		panic(err.Error())
+	}
+	return *version
 }

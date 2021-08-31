@@ -111,7 +111,6 @@ func (s *clusterImageSourceManifest) Dir() string {
 func (s *clusterImageSourceManifest) Manifest() (*schema.Manifest, error) {
 	manifest, err := schema.ParseManifest(s.manifestPath)
 	if err != nil {
-		log.WithError(err).Error("Failed to parse manifest file.")
 		return nil, trace.BadParameter("could not parse manifest file:\n%v",
 			trace.Unwrap(err)) // show original parsing error
 	}

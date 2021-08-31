@@ -29,6 +29,7 @@ import (
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/defaults"
 	libfsm "github.com/gravitational/gravity/lib/fsm"
+	"github.com/gravitational/gravity/lib/install"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/ops"
@@ -627,6 +628,38 @@ func checkForUpdate(
 		updateApp.Package.Version)
 
 	return updateApp, nil
+}
+
+// getUpdatePackage returns the locator of the update application package.
+// It works as following:
+//
+//  * if a package pattern has been specified, it is used to create the locator (see loc.MakeLocator for details)
+//  * if the pattern is empty and args describes a valid tarball environment - then the application package
+// 	from the environment is used
+//  * otherwise, the latest version of the currently installed cluster application is assumed
+func getUpdatePackage(args localenv.TarballEnvironmentArgs, updatePackagePattern string, clusterApp loc.Locator) (*loc.Locator, error) {
+	if updatePackagePattern != "" {
+		return loc.MakeLocator(updatePackagePattern)
+	}
+	if loc, err := getAppPackageFromTarball(args); err == nil {
+		log.WithField("app", loc.String()).Info("Use the version from the tarball environment.")
+		return loc, nil
+	} else if !trace.IsNotFound(err) {
+		log.WithError(err).Warn("Failed to query package from tarball environment.")
+	} else {
+		log.WithError(err).Warn("Failed to find package in tarball environment.")
+	}
+	log.WithField("app", clusterApp.String()).Info("Use latest version of the currently installed application.")
+	return loc.MakeLocator(clusterApp.Name)
+}
+
+func getAppPackageFromTarball(args localenv.TarballEnvironmentArgs) (*loc.Locator, error) {
+	tarballEnv, err := localenv.NewTarballEnvironment(args)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer tarballEnv.Close()
+	return install.GetAppPackage(tarballEnv.Apps)
 }
 
 func supportsUpdate(gravityPackage loc.Locator) (supports bool, err error) {

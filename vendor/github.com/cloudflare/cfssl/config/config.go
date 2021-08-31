@@ -2,6 +2,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/json"
@@ -18,6 +19,9 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
 	ocspConfig "github.com/cloudflare/cfssl/ocsp/config"
+	// empty import of zlint/v3 required to have lints registered.
+	_ "github.com/zmap/zlint/v3"
+	"github.com/zmap/zlint/v3/lint"
 )
 
 // A CSRWhitelist stores booleans for fields in the CSR. If a CSRWhitelist is
@@ -31,7 +35,7 @@ import (
 // mechanism.
 type CSRWhitelist struct {
 	Subject, PublicKeyAlgorithm, PublicKey, SignatureAlgorithm bool
-	DNSNames, IPAddresses, EmailAddresses                      bool
+	DNSNames, IPAddresses, EmailAddresses, URIs                bool
 }
 
 // OID is our own version of asn1's ObjectIdentifier, so we can define a custom
@@ -59,37 +63,70 @@ type AuthRemote struct {
 	AuthKeyName string `json:"auth_key"`
 }
 
+// CAConstraint specifies various CA constraints on the signed certificate.
+// CAConstraint would verify against (and override) the CA
+// extensions in the given CSR.
+type CAConstraint struct {
+	IsCA           bool `json:"is_ca"`
+	MaxPathLen     int  `json:"max_path_len"`
+	MaxPathLenZero bool `json:"max_path_len_zero"`
+}
+
 // A SigningProfile stores information that the CA needs to store
 // signature policy.
 type SigningProfile struct {
-	Usage               []string   `json:"usages"`
-	IssuerURL           []string   `json:"issuer_urls"`
-	OCSP                string     `json:"ocsp_url"`
-	CRL                 string     `json:"crl_url"`
-	CA                  bool       `json:"is_ca"`
-	OCSPNoCheck         bool       `json:"ocsp_no_check"`
-	ExpiryString        string     `json:"expiry"`
-	BackdateString      string     `json:"backdate"`
-	AuthKeyName         string     `json:"auth_key"`
-	RemoteName          string     `json:"remote"`
-	NotBefore           time.Time  `json:"not_before"`
-	NotAfter            time.Time  `json:"not_after"`
-	NameWhitelistString string     `json:"name_whitelist"`
-	AuthRemote          AuthRemote `json:"auth_remote"`
-	CTLogServers        []string   `json:"ct_log_servers"`
-	AllowedExtensions   []OID      `json:"allowed_extensions"`
-	CertStore           string     `json:"cert_store"`
+	Usage               []string     `json:"usages"`
+	IssuerURL           []string     `json:"issuer_urls"`
+	OCSP                string       `json:"ocsp_url"`
+	CRL                 string       `json:"crl_url"`
+	CAConstraint        CAConstraint `json:"ca_constraint"`
+	OCSPNoCheck         bool         `json:"ocsp_no_check"`
+	ExpiryString        string       `json:"expiry"`
+	BackdateString      string       `json:"backdate"`
+	AuthKeyName         string       `json:"auth_key"`
+	CopyExtensions      bool         `json:"copy_extensions"`
+	PrevAuthKeyName     string       `json:"prev_auth_key"` // to support key rotation
+	RemoteName          string       `json:"remote"`
+	NotBefore           time.Time    `json:"not_before"`
+	NotAfter            time.Time    `json:"not_after"`
+	NameWhitelistString string       `json:"name_whitelist"`
+	AuthRemote          AuthRemote   `json:"auth_remote"`
+	CTLogServers        []string     `json:"ct_log_servers"`
+	AllowedExtensions   []OID        `json:"allowed_extensions"`
+	CertStore           string       `json:"cert_store"`
+	// LintErrLevel controls preissuance linting for the signing profile.
+	// 0 = no linting is performed [default]
+	// 2..3 = reserved
+	// 3 = all lint results except pass are considered errors
+	// 4 = all lint results except pass and notice are considered errors
+	// 5 = all lint results except pass, notice and warn are considered errors
+	// 6 = all lint results except pass, notice, warn and error are considered errors.
+	// 7 = lint is performed, no lint results are treated as errors.
+	LintErrLevel lint.LintStatus `json:"lint_error_level"`
+	// ExcludeLints lists ZLint lint names to exclude from preissuance linting.
+	ExcludeLints []string `json:"ignored_lints"`
+	// ExcludeLintSources lists ZLint lint sources to exclude from preissuance
+	// linting.
+	ExcludeLintSources []string `json:"ignored_lint_sources"`
 
 	Policies                    []CertificatePolicy
 	Expiry                      time.Duration
 	Backdate                    time.Duration
 	Provider                    auth.Provider
+	PrevProvider                auth.Provider // to suppport key rotation
 	RemoteProvider              auth.Provider
 	RemoteServer                string
+	RemoteCAs                   *x509.CertPool
+	ClientCert                  *tls.Certificate
 	CSRWhitelist                *CSRWhitelist
 	NameWhitelist               *regexp.Regexp
 	ExtensionWhitelist          map[string]bool
 	ClientProvidesSerialNumbers bool
+	// LintRegistry is the collection of lints that should be used if
+	// LintErrLevel is configured. By default all ZLint lints are used. If
+	// ExcludeLints or ExcludeLintSources are set then this registry will be
+	// filtered in populate() to exclude the named lints and lint sources.
+	LintRegistry lint.Registry
 }
 
 // UnmarshalJSON unmarshals a JSON string into an OID.
@@ -217,7 +254,7 @@ func (p *SigningProfile) populate(cfg *Config) error {
 
 	if p.AuthKeyName != "" {
 		log.Debug("match auth key in profile to auth_keys section")
-		if key, ok := cfg.AuthKeys[p.AuthKeyName]; ok == true {
+		if key, ok := cfg.AuthKeys[p.AuthKeyName]; ok {
 			if key.Type == "standard" {
 				p.Provider, err = auth.New(key.Key, nil)
 				if err != nil {
@@ -233,6 +270,27 @@ func (p *SigningProfile) populate(cfg *Config) error {
 		} else {
 			return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
 				errors.New("failed to find auth_key in auth_keys section"))
+		}
+	}
+
+	if p.PrevAuthKeyName != "" {
+		log.Debug("match previous auth key in profile to auth_keys section")
+		if key, ok := cfg.AuthKeys[p.PrevAuthKeyName]; ok {
+			if key.Type == "standard" {
+				p.PrevProvider, err = auth.New(key.Key, nil)
+				if err != nil {
+					log.Debugf("failed to create new standard auth provider: %v", err)
+					return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
+						errors.New("failed to create new standard auth provider"))
+				}
+			} else {
+				log.Debugf("unknown authentication type %v", key.Type)
+				return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
+					errors.New("unknown authentication type"))
+			}
+		} else {
+			return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
+				errors.New("failed to find prev_auth_key in auth_keys section"))
 		}
 	}
 
@@ -272,6 +330,40 @@ func (p *SigningProfile) populate(cfg *Config) error {
 		p.ExtensionWhitelist[asn1.ObjectIdentifier(oid).String()] = true
 	}
 
+	// By default perform any required preissuance linting with all ZLint lints.
+	p.LintRegistry = lint.GlobalRegistry()
+
+	// If ExcludeLintSources are present in config build a lint.SourceList while
+	// validating that no unknown sources were specified.
+	var excludedSources lint.SourceList
+	if len(p.ExcludeLintSources) > 0 {
+		for _, sourceName := range p.ExcludeLintSources {
+			var lintSource lint.LintSource
+			lintSource.FromString(sourceName)
+			if lintSource == lint.UnknownLintSource {
+				return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
+					fmt.Errorf("failed to build excluded lint source list: unknown source %q",
+						sourceName))
+			}
+			excludedSources = append(excludedSources, lintSource)
+		}
+	}
+
+	opts := lint.FilterOptions{
+		ExcludeNames:   p.ExcludeLints,
+		ExcludeSources: excludedSources,
+	}
+	if !opts.Empty() {
+		// If ExcludeLints or ExcludeLintSources were not empty then filter out the
+		// lints we don't want to use for preissuance linting with this profile.
+		filteredRegistry, err := p.LintRegistry.Filter(opts)
+		if err != nil {
+			return cferr.Wrap(cferr.PolicyError, cferr.InvalidPolicy,
+				fmt.Errorf("failed to build filtered lint registry: %v", err))
+		}
+		p.LintRegistry = filteredRegistry
+	}
+
 	return nil
 }
 
@@ -301,6 +393,44 @@ func (p *Signing) OverrideRemotes(remote string) error {
 		}
 	}
 	return nil
+}
+
+// SetClientCertKeyPairFromFile updates the properties to set client certificates for mutual
+// authenticated TLS remote requests
+func (p *Signing) SetClientCertKeyPairFromFile(certFile string, keyFile string) error {
+	if certFile != "" && keyFile != "" {
+		cert, err := helpers.LoadClientCertificate(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+		for _, profile := range p.Profiles {
+			profile.ClientCert = cert
+		}
+		p.Default.ClientCert = cert
+	}
+	return nil
+}
+
+// SetRemoteCAsFromFile reads root CAs from file and updates the properties to set remote CAs for TLS
+// remote requests
+func (p *Signing) SetRemoteCAsFromFile(caFile string) error {
+	if caFile != "" {
+		remoteCAs, err := helpers.LoadPEMCertPool(caFile)
+		if err != nil {
+			return err
+		}
+		p.SetRemoteCAs(remoteCAs)
+	}
+	return nil
+}
+
+// SetRemoteCAs updates the properties to set remote CAs for TLS
+// remote requests
+func (p *Signing) SetRemoteCAs(remoteCAs *x509.CertPool) {
+	for _, profile := range p.Profiles {
+		profile.RemoteCAs = remoteCAs
+	}
+	p.Default.RemoteCAs = remoteCAs
 }
 
 // NeedsRemoteSigner returns true if one of the profiles has a remote set
@@ -354,9 +484,15 @@ func (p *SigningProfile) Usages() (ku x509.KeyUsage, eku []x509.ExtKeyUsage, unk
 // valid local default profile has defined at least a default expiration.
 // A valid remote profile (default or not) has remote signer initialized.
 // In addition, a remote profile must has a valid auth provider if auth
-// key defined.
+// key defined. A valid profile must not include a lint_error_level outside of
+// [0,8).
 func (p *SigningProfile) validProfile(isDefault bool) bool {
 	if p == nil {
+		return false
+	}
+
+	if p.AuthRemote.RemoteName == "" && p.AuthRemote.AuthKeyName != "" {
+		log.Debugf("invalid auth remote profile: no remote signer specified")
 		return false
 	}
 
@@ -375,6 +511,7 @@ func (p *SigningProfile) validProfile(isDefault bool) bool {
 
 		if p.AuthRemote.RemoteName != "" {
 			log.Debugf("invalid remote profile: auth remote is also specified")
+			return false
 		}
 	} else if p.AuthRemote.RemoteName != "" {
 		log.Debugf("validate auth remote profile")
@@ -405,8 +542,50 @@ func (p *SigningProfile) validProfile(isDefault bool) bool {
 		}
 	}
 
+	if p.LintErrLevel < 0 || p.LintErrLevel >= 8 {
+		log.Debugf("invalid profile: lint_error_level outside of range [0,8)")
+		return false
+	}
+
 	log.Debugf("profile is valid")
 	return true
+}
+
+// This checks if the SigningProfile object contains configurations that are only effective with a local signer
+// which has access to CA private key.
+func (p *SigningProfile) hasLocalConfig() bool {
+	if p.Usage != nil ||
+		p.IssuerURL != nil ||
+		p.OCSP != "" ||
+		p.ExpiryString != "" ||
+		p.BackdateString != "" ||
+		p.CAConstraint.IsCA != false ||
+		!p.NotBefore.IsZero() ||
+		!p.NotAfter.IsZero() ||
+		p.NameWhitelistString != "" ||
+		len(p.CTLogServers) != 0 {
+		return true
+	}
+	return false
+}
+
+// warnSkippedSettings prints a log warning message about skipped settings
+// in a SigningProfile, usually due to remote signer.
+func (p *Signing) warnSkippedSettings() {
+	const warningMessage = `The configuration value by "usages", "issuer_urls", "ocsp_url", "crl_url", "ca_constraint", "expiry", "backdate", "not_before", "not_after", "cert_store" and "ct_log_servers" are skipped`
+	if p == nil {
+		return
+	}
+
+	if (p.Default.RemoteName != "" || p.Default.AuthRemote.RemoteName != "") && p.Default.hasLocalConfig() {
+		log.Warning("default profile points to a remote signer: ", warningMessage)
+	}
+
+	for name, profile := range p.Profiles {
+		if (profile.RemoteName != "" || profile.AuthRemote.RemoteName != "") && profile.hasLocalConfig() {
+			log.Warningf("Profiles[%s] points to a remote signer: %s", name, warningMessage)
+		}
+	}
 }
 
 // Signing codifies the signature configuration policy for a CA.
@@ -450,21 +629,24 @@ func (p *Signing) Valid() bool {
 			return false
 		}
 	}
+
+	p.warnSkippedSettings()
+
 	return true
 }
 
 // KeyUsage contains a mapping of string names to key usages.
 var KeyUsage = map[string]x509.KeyUsage{
-	"signing":             x509.KeyUsageDigitalSignature,
-	"digital signature":   x509.KeyUsageDigitalSignature,
-	"content committment": x509.KeyUsageContentCommitment,
-	"key encipherment":    x509.KeyUsageKeyEncipherment,
-	"key agreement":       x509.KeyUsageKeyAgreement,
-	"data encipherment":   x509.KeyUsageDataEncipherment,
-	"cert sign":           x509.KeyUsageCertSign,
-	"crl sign":            x509.KeyUsageCRLSign,
-	"encipher only":       x509.KeyUsageEncipherOnly,
-	"decipher only":       x509.KeyUsageDecipherOnly,
+	"signing":            x509.KeyUsageDigitalSignature,
+	"digital signature":  x509.KeyUsageDigitalSignature,
+	"content commitment": x509.KeyUsageContentCommitment,
+	"key encipherment":   x509.KeyUsageKeyEncipherment,
+	"key agreement":      x509.KeyUsageKeyAgreement,
+	"data encipherment":  x509.KeyUsageDataEncipherment,
+	"cert sign":          x509.KeyUsageCertSign,
+	"crl sign":           x509.KeyUsageCRLSign,
+	"encipher only":      x509.KeyUsageEncipherOnly,
+	"decipher only":      x509.KeyUsageDecipherOnly,
 }
 
 // ExtKeyUsage contains a mapping of string names to extended key

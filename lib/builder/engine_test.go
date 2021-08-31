@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,14 +39,17 @@ import (
 	packtest "github.com/gravitational/gravity/lib/pack/test"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
-
-	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	"github.com/gravitational/version"
+
+	"github.com/coreos/go-semver/semver"
+	"github.com/sirupsen/logrus"
 	check "gopkg.in/check.v1"
 )
 
-func TestBuilder(t *testing.T) { check.TestingT(t) }
+func TestBuilder(t *testing.T) {
+	check.TestingT(t)
+}
 
 type BuilderSuite struct{}
 
@@ -100,6 +104,7 @@ func (s *BuilderSuite) TestVersionsCompatibility(c *check.C) {
 func (s *BuilderSuite) TestSelectRuntimeVersion(c *check.C) {
 	b := &Engine{
 		Config: Config{
+			Log:      newLogger(c),
 			Progress: utils.DiscardProgress,
 		},
 	}
@@ -122,130 +127,41 @@ func (s *BuilderSuite) TestSelectRuntimeVersion(c *check.C) {
 }
 
 func (s *InstallerBuilderSuite) TestBuildInstallerWithDefaultPlanetPackage(c *check.C) {
-	// client := docker.CheckDocker(c)
-
-	// 	var (
-	// 		manifestBytes = []byte(`
-	// apiVersion: cluster.gravitational.io/v2
-	// kind: Cluster
-	// metadata:
-	//   name: app
-	//   resourceVersion: "0.0.1"
-	// dependencies:
-	//   apps:
-	//     - gravitational.io/app-dependency:0.0.1
-	// installer:
-	//   flavors:
-	//     items:
-	//       - name: "one"
-	//         nodes:
-	//           - profile: master
-	//             count: 1
-	//       - name: "three"
-	//         nodes:
-	//           - profile: master
-	//             count: 1
-	//           - profile: node
-	//             count: 2
-	// nodeProfiles:
-	//   - name: master
-	//     labels:
-	//       node-role.kubernetes.io/master: "true"
-	//   - name: node
-	//     labels:
-	//       node-role.kubernetes.io/node: "true"
-	// systemOptions:
-	//   runtime:
-	//     version: 0.0.1
-	// `)
-	//
-	// 		dependencyManifestBytes = []byte(`
-	// apiVersion: bundle.gravitational.io/v2
-	// kind: SystemApplication
-	// metadata:
-	//   name: app-dependency
-	//   resourceVersion: "0.0.1"
-	// `)
-	// 	)
+	docker.TestRequiresDocker(c)
 
 	// setup
-	appLoc := loc.MustParseLocator("gravitational.io/app:0.0.1")
 	remoteEnv := newEnviron(c)
 	defer remoteEnv.Close()
 	buildEnv := newEnviron(c)
 	defer buildEnv.Close()
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
-	app := apptest.CreateApplication(apptest.AppRequest{
-		App:      apptest.DefaultClusterApplication(appLoc).Build(),
-		Apps:     remoteEnv.Apps,
-		Packages: remoteEnv.Packages,
-	}, c)
-	//writeFile(manifestPath, manifestBytes, c)
+	app := createClusterApplication(remoteEnv, c)
+
 	manifestBytes, err := json.Marshal(app.Manifest)
 	c.Assert(err, check.IsNil)
 	writeFile(manifestPath, manifestBytes, c)
 
-	// FIXME(dima)
-	// createRuntimeApplication(remoteEnv, c)
-	// createApp(dependencyManifestBytes, remoteEnv.Apps, c)
-	// createApp(manifestBytes, remoteEnv.Apps, c)
-
 	b, err := NewClusterBuilder(Config{
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
-		Repository:       "test-repository",
-		Syncer:           NewPackSyncer(remoteEnv.Packages, remoteEnv.Apps, "test-repository"),
+		Repository:       "repository",
+		Syncer:           NewPackSyncer(remoteEnv.Packages, remoteEnv.Apps, "repository"),
 	})
 	c.Assert(err, check.IsNil)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
 		OutputPath: filepath.Join(buildEnv.StateDir, "app.tar"),
-		//ManifestPath: manifestPath,
 		SourcePath: filepath.Dir(manifestPath),
 	})
 	c.Assert(err, check.IsNil)
 }
 
 func (s *InstallerBuilderSuite) TestBuildInstallerWithMixedVersionPackages(c *check.C) {
-	if !checkDockerAvailable() {
-		c.Skip("test requires docker")
-	}
-
-	var (
-		manifestBytes = []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  runtime:
-    version: 0.0.0+latest # use meta version as a placeholder
-`)
-	)
+	docker.TestRequiresDocker(c)
 
 	// setup
 	remoteEnv := newEnviron(c)
@@ -255,11 +171,11 @@ systemOptions:
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
 
+	// Force builder to use specific runtime version
 	version.Init("0.0.1")
-	writeFile(manifestPath, manifestBytes, c)
 	outputPath := filepath.Join(buildEnv.StateDir, "app.tar")
 	b, err := NewClusterBuilder(Config{
-		// FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -270,15 +186,14 @@ systemOptions:
 
 	// Simulate a workflow with packages/applications of mixed versions
 	// and at least one version available above the requested runtime version
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplicationWithVersion(buildEnv, "0.0.1", c)
-	// createRuntimeApplicationWithVersion(buildEnv, "0.0.2", c)
-	// createApp(manifestBytes, buildEnv.Apps, c)
+	createRuntimeApplicationWithVersion(buildEnv, "0.0.1", c)
+	createRuntimeApplicationWithVersion(buildEnv, "0.0.2", c)
+	clusterApp := createClusterApplicationWithRuntimePlaceholder(buildEnv, c)
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
 		OutputPath: outputPath,
-		//ManifestPath:     manifestPath,
 		SourcePath: filepath.Dir(manifestPath),
 	})
 	c.Assert(err, check.IsNil)
@@ -287,50 +202,18 @@ systemOptions:
 	tarballEnv := unpackTarball(outputPath, unpackDir, c)
 	defer tarballEnv.Close()
 
-	packtest.VerifyPackages(tarballEnv.Packages, mustLoc(
-		"gravitational.io/planet:0.0.1",
-		"gravitational.io/app:0.0.1",
-		"gravitational.io/gravity:0.0.1",
-		"gravitational.io/kubernetes:0.0.1"), c)
+	packtest.VerifyPackages(tarballEnv.Packages,
+		mustLoc(
+			"gravitational.io/planet:0.0.1",
+			"gravitational.io/app:0.0.1",
+			"gravitational.io/app-dependency:0.0.1",
+			"gravitational.io/gravity:0.0.1",
+			"gravitational.io/kubernetes:0.0.1",
+		), c)
 }
 
 func (s *InstallerBuilderSuite) TestBuildInstallerWithPackagesInCache(c *check.C) {
-	if !checkDockerAvailable() {
-		c.Skip("test requires docker")
-	}
-
-	var (
-		manifestBytes = []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  runtime:
-    version: 0.0.2-dev.1
-`)
-	)
+	docker.TestRequiresDocker(c)
 
 	// setup
 	remoteEnv := newEnviron(c)
@@ -340,9 +223,8 @@ systemOptions:
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
 
-	writeFile(manifestPath, manifestBytes, c)
 	b, err := NewClusterBuilder(Config{
-		// FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -353,56 +235,20 @@ systemOptions:
 
 	// Simulate a development workflow with packages/applications
 	// explicitly cached (but also unavailable in the remote hub)
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplicationWithVersion(buildEnv, "0.0.2-dev.1", c)
-	// createApp(manifestBytes, buildEnv.Apps, c)
+	md := defaultApplicationMetadata.withRuntime("0.0.2-dev.1")
+	clusterApp := createClusterApplicationFromMetadata(buildEnv, md, c)
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
 		OutputPath: filepath.Join(buildEnv.StateDir, "app.tar"),
-		//ManifestPath:     manifestPath,
 		SourcePath: filepath.Dir(manifestPath),
 	})
 	c.Assert(err, check.IsNil)
 }
 
 func (s *InstallerBuilderSuite) TestBuildInstallerWithIntermediateHops(c *check.C) {
-	if !checkDockerAvailable() {
-		c.Skip("test requires docker")
-	}
-
-	var (
-		manifestBytes = []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  runtime:
-    version: 0.0.2
-`)
-	)
+	docker.TestRequiresDocker(c)
 
 	// setup
 	remoteEnv := newEnviron(c)
@@ -412,10 +258,9 @@ systemOptions:
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
 
-	writeFile(manifestPath, manifestBytes, c)
 	outputPath := filepath.Join(buildEnv.StateDir, "app.tar")
 	b, err := NewClusterBuilder(Config{
-		//FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -425,10 +270,10 @@ systemOptions:
 	})
 	c.Assert(err, check.IsNil)
 
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplicationWithVersion(remoteEnv, "0.0.1", c)
-	// createRuntimeApplicationWithVersion(remoteEnv, "0.0.2", c)
-	// createApp(manifestBytes, remoteEnv.Apps, c)
+	createRuntimeApplicationWithVersion(remoteEnv, "0.0.1", c)
+	md := defaultApplicationMetadata.withRuntime("0.0.2")
+	clusterApp := createClusterApplicationFromMetadata(remoteEnv, md, c)
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
@@ -455,13 +300,13 @@ systemOptions:
 			pack.PurposeRuntimeUpgrade, "0.0.1",
 		),
 		packtest.NewPackage("gravitational.io/kubernetes:0.0.2"),
+		packtest.NewPackage("gravitational.io/app-dependency:0.0.1"),
 	}, c)
 }
 
 func (s *BuilderSuite) TestBuildInstallerWithDefaultPlanetPackageFromLegacyHub(c *check.C) {
-	if !checkDockerAvailable() {
-		c.Skip("test requires docker")
-	}
+	docker.TestRequiresDocker(c)
+
 	// setup
 	remoteEnv := newEnviron(c)
 	defer remoteEnv.Close()
@@ -469,41 +314,9 @@ func (s *BuilderSuite) TestBuildInstallerWithDefaultPlanetPackageFromLegacyHub(c
 	defer buildEnv.Close()
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
-	manifestBytes := []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  #dependencies:
-  #  runtimePackage: gravitational.io/planet:0.0.1
-  runtime:
-    version: 0.0.1
-`)
-	writeFile(manifestPath, manifestBytes, c)
+
 	b, err := NewClusterBuilder(Config{
-		//FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -512,10 +325,8 @@ systemOptions:
 	})
 	c.Assert(err, check.IsNil)
 
-	//
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplication(remoteEnv, c)
-	// createApp(manifestBytes, remoteEnv.Apps, c)
+	clusterApp := createClusterApplication(remoteEnv, c)
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
@@ -526,18 +337,15 @@ systemOptions:
 }
 
 func (s *CustomImageBuilderSuite) SetUpTest(c *check.C) {
-	_ = docker.CheckDocker(c)
+	docker.TestRequiresDocker(c)
+	dockerDir := c.MkDir()
 	// FIXME(dima): use dockertest builder API
-	// if !checkDockerAvailable() {
-	// 	c.Skip("test requires docker")
-	// }
-	// dockerDir := c.MkDir()
-	// createPlanetDockerImage(dockerDir, planetTag, c)
+	createPlanetDockerImage(dockerDir, planetTag, c)
 }
 
 func (s *CustomImageBuilderSuite) TearDownTest(c *check.C) {
 	// FIXME(dima): use dockertest builder API
-	// removePlanetDockerImage(c)
+	removePlanetDockerImage(c)
 }
 
 func (s *CustomImageBuilderSuite) TestBuildInstallerWithCustomGlobalPlanetPackage(c *check.C) {
@@ -547,41 +355,9 @@ func (s *CustomImageBuilderSuite) TestBuildInstallerWithCustomGlobalPlanetPackag
 	defer buildEnv.Close()
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
-	manifestBytes := []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  baseImage: quay.io/gravitational/planet:0.0.2
-  runtime:
-    version: 0.0.1
-`)
-	writeFile(manifestPath, manifestBytes, c)
 	outputPath := filepath.Join(buildEnv.StateDir, "app.tar")
 	b, err := NewClusterBuilder(Config{
-		//FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -590,19 +366,16 @@ systemOptions:
 	})
 	c.Assert(err, check.IsNil)
 
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplication(remoteEnv, c)
-	// createApp(manifestBytes, remoteEnv.Apps, c)
+	md := defaultApplicationMetadata.withBaseImage("quay.io/gravitational/planet:0.0.2")
+	clusterApp := createClusterApplicationFromMetadata(remoteEnv, md, c)
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
 		OutputPath: outputPath,
 		SourcePath: filepath.Dir(manifestPath),
 		Vendor: app.VendorRequest{
-			PackageName:      "app",
-			PackageVersion:   "0.0.1",
 			VendorRuntime:    true,
-			ManifestPath:     manifestPath,
 			ResourcePatterns: []string{defaults.VendorPattern},
 		},
 	})
@@ -616,7 +389,9 @@ systemOptions:
 		"gravitational.io/planet:0.0.2",
 		"gravitational.io/app:0.0.1",
 		"gravitational.io/gravity:0.0.1",
-		"gravitational.io/kubernetes:0.0.1"), c)
+		"gravitational.io/kubernetes:0.0.1",
+		"gravitational.io/app-dependency:0.0.1",
+	), c)
 }
 
 func (s *CustomImageBuilderSuite) TestBuildInstallerWithCustomPerNodePlanetPackage(c *check.C) {
@@ -626,42 +401,9 @@ func (s *CustomImageBuilderSuite) TestBuildInstallerWithCustomPerNodePlanetPacka
 	defer buildEnv.Close()
 	appDir := c.MkDir()
 	manifestPath := filepath.Join(appDir, defaults.ManifestFileName)
-	manifestBytes := []byte(`
-apiVersion: cluster.gravitational.io/v2
-kind: Cluster
-metadata:
-  name: app
-  resourceVersion: "0.0.1"
-installer:
-  flavors:
-    items:
-      - name: "one"
-        nodes:
-          - profile: master
-            count: 1
-      - name: "three"
-        nodes:
-          - profile: master
-            count: 1
-          - profile: node
-            count: 2
-nodeProfiles:
-  - name: master
-    labels:
-      node-role.kubernetes.io/master: "true"
-  - name: node
-    systemOptions:
-      baseImage: quay.io/gravitational/planet:0.0.2
-    labels:
-      node-role.kubernetes.io/node: "true"
-systemOptions:
-  runtime:
-    version: 0.0.1
-`)
-	writeFile(manifestPath, manifestBytes, c)
 	outputPath := filepath.Join(buildEnv.StateDir, "app.tar")
 	b, err := NewClusterBuilder(Config{
-		//FieldLogger:      logrus.WithField(trace.Component, "test"),
+		Log:              newLogger(c),
 		Progress:         utils.DiscardProgress,
 		Env:              buildEnv,
 		SkipVersionCheck: true,
@@ -670,19 +412,29 @@ systemOptions:
 	})
 	c.Assert(err, check.IsNil)
 
-	// TODO(dima): use apptest builder APIs
-	// createRuntimeApplication(remoteEnv, c)
-	// createApp(manifestBytes, remoteEnv.Apps, c)
+	clusterApp := createClusterApplication(remoteEnv, c)
+	clusterApp.Manifest.NodeProfiles = schema.NodeProfiles{
+		{
+			Name: "master",
+			Labels: map[string]string{
+				"node-role.kubernetes.io/master": "true",
+			},
+		},
+		{
+			Name: "node",
+			SystemOptions: &schema.SystemOptions{
+				BaseImage: "quay.io/gravitational/planet:0.0.2",
+			},
+		},
+	}
+	writeManifestFile(clusterApp.Manifest, manifestPath, c)
 
 	// verify
 	err = b.Build(context.TODO(), ClusterRequest{
 		OutputPath: outputPath,
 		SourcePath: manifestPath,
 		Vendor: app.VendorRequest{
-			PackageName:      "app",
-			PackageVersion:   "0.0.1",
 			VendorRuntime:    true,
-			ManifestPath:     manifestPath,
 			ResourcePatterns: []string{defaults.VendorPattern},
 		},
 	})
@@ -698,7 +450,13 @@ systemOptions:
 		"gravitational.io/planet:0.0.1",
 		"gravitational.io/app:0.0.1",
 		"gravitational.io/gravity:0.0.1",
-		"gravitational.io/kubernetes:0.0.1"), c)
+		"gravitational.io/app-dependency:0.0.1",
+		"gravitational.io/kubernetes:0.0.1",
+	), c)
+}
+
+func newLogger(c *check.C) logrus.FieldLogger {
+	return logrus.WithField("test", c.TestName())
 }
 
 func mustLoc(pkgs ...string) (result []loc.Locator) {
@@ -715,56 +473,91 @@ func newEnviron(c *check.C) *localenv.LocalEnvironment {
 	return env
 }
 
-// TODO(dima): remove me
-// func createRuntimeApplication(env *localenv.LocalEnvironment, c *check.C) {
-// 	createRuntimeApplicationWithVersion(env, "0.0.1", c)
-// }
-//
-// func createRuntimeApplicationWithVersion(env *localenv.LocalEnvironment, version string, c *check.C) {
-// 	runtimePackage := loc.Planet.WithLiteralVersion(version)
-// 	gravityPackage := loc.Gravity.WithLiteralVersion(version)
-// 	items := []*archive.Item{
-// 		archive.ItemFromString("planet", "planet"),
-// 	}
-// 	apptest.CreatePackage(env.Packages, runtimePackage, items, c)
-// 	items = []*archive.Item{
-// 		archive.ItemFromString("gravity", "gravity"),
-// 	}
-// 	apptest.CreatePackage(env.Packages, gravityPackage, items, c)
-// 	manifestBytes := fmt.Sprintf(`apiVersion: bundle.gravitational.io/v2
-// kind: Runtime
-// metadata:
-//   name: kubernetes
-//   resourceVersion: %[1]v
-// dependencies:
-//   packages:
-//   - gravitational.io/planet:%[1]v
-//   - gravitational.io/gravity:%[1]v
-// systemOptions:
-//   dependencies:
-//     runtimePackage: gravitational.io/planet:%[1]v
-// `, version)
-// 	runtimeAppLoc := loc.Runtime.WithLiteralVersion(version)
-// 	items = []*archive.Item{
-// 		archive.DirItem("resources"),
-// 		archive.ItemFromString("resources/app.yaml", manifestBytes),
-// 	}
-// 	apptest.CreateApplicationFromData(env.Apps, runtimeAppLoc, items, c)
-// }
+func createRuntimeApplication(env *localenv.LocalEnvironment, c *check.C) *libapp.Application {
+	return createRuntimeApplicationWithVersion(env, "0.0.1", c)
+}
 
-// func createApp(manifestBytes []byte, apps libapp.Applications, c *check.C) *libapp.Application {
-// 	manifest := schema.MustParseManifestYAML(manifestBytes)
-// 	loc := loc.Locator{
-// 		Repository: defaults.SystemAccountOrg,
-// 		Name:       manifest.Metadata.Name,
-// 		Version:    manifest.Metadata.ResourceVersion,
-// 	}
-// 	files := []*archive.Item{
-// 		archive.DirItem("resources"),
-// 		archive.ItemFromString("resources/app.yaml", string(manifestBytes)),
-// 	}
-// 	return apptest.CreateApplicationFromData(apps, loc, files, c)
-// }
+func createRuntimeApplicationWithVersion(env *localenv.LocalEnvironment, version string, c *check.C) *libapp.Application {
+	return apptest.CreateApplication(apptest.AppRequest{
+		App:      defaultApplicationMetadata.withRuntime(version).runtimeApp,
+		Apps:     env.Apps,
+		Packages: env.Packages,
+	}, c)
+}
+
+var defaultApplicationMetadata = applicationMetadata{
+	runtimeApp: apptest.RuntimeApplication(apptest.RuntimeApplicationLoc, apptest.RuntimePackageLoc).
+		WithSchemaPackageDependencies(
+			loc.Gravity.WithLiteralVersion(apptest.RuntimePackageLoc.Version),
+			// Since we're replacing the package dependencies, we need to
+			// keep the runtime package in the list
+			apptest.RuntimePackageLoc,
+		).
+		Build(),
+	appDepLoc: loc.MustParseLocator("gravitational.io/app-dependency:0.0.1"),
+	appLoc:    loc.MustParseLocator("gravitational.io/app:0.0.1"),
+}
+
+func (r applicationMetadata) withBaseImage(ref string) applicationMetadata {
+	r.baseImage = ref
+	return r
+}
+
+func (r applicationMetadata) withRuntime(version string) applicationMetadata {
+	r.runtimeApp = apptest.RuntimeApplication(
+		apptest.RuntimeApplicationLoc.WithLiteralVersion(version),
+		apptest.RuntimePackageLoc.WithLiteralVersion(version)).
+		WithSchemaPackageDependencies(
+			loc.Gravity.WithLiteralVersion(version),
+			apptest.RuntimePackageLoc.WithLiteralVersion(version),
+		).
+		Build()
+	return r
+}
+
+type applicationMetadata struct {
+	runtimeApp apptest.App
+	appDepLoc  loc.Locator
+	appLoc     loc.Locator
+	baseImage  string
+}
+
+func createClusterApplication(env *localenv.LocalEnvironment, c *check.C) apptest.App {
+	return createClusterApplicationFromMetadata(env, defaultApplicationMetadata, c)
+}
+
+func createClusterApplicationFromMetadata(env *localenv.LocalEnvironment, md applicationMetadata, c *check.C) apptest.App {
+	appDep := apptest.SystemApplication(md.appDepLoc).Build()
+	clusterApp := apptest.ClusterApplication(md.appLoc, md.runtimeApp).
+		WithDependencies(apptest.Dependencies{Apps: []apptest.App{appDep}}).
+		Build()
+	clusterApp.Manifest.SystemOptions.BaseImage = md.baseImage
+	apptest.CreateApplicationDependencies(apptest.AppRequest{
+		App:      clusterApp,
+		Apps:     env.Apps,
+		Packages: env.Packages,
+	}, c)
+	return clusterApp
+}
+
+func createClusterApplicationWithRuntimePlaceholder(env *localenv.LocalEnvironment, c *check.C) apptest.App {
+	appDep := apptest.SystemApplication(defaultApplicationMetadata.appDepLoc).Build()
+	apptest.CreateApplication(apptest.AppRequest{
+		App:      appDep,
+		Apps:     env.Apps,
+		Packages: env.Packages,
+	}, c)
+	return apptest.ClusterApplicationWithRuntimePlaceholder(defaultApplicationMetadata.appLoc).
+		WithDependencies(apptest.Dependencies{Apps: []apptest.App{appDep}}).
+		Build()
+}
+
+func writeManifestFile(manifest schema.Manifest, path string, c *check.C) {
+	bytes, err := json.Marshal(manifest)
+	c.Assert(err, check.IsNil)
+	err = ioutil.WriteFile(path, bytes, defaults.SharedReadWriteMask)
+	c.Assert(err, check.IsNil)
+}
 
 func writeFile(path string, contents []byte, c *check.C) {
 	err := ioutil.WriteFile(path, contents, defaults.SharedReadWriteMask)
@@ -796,31 +589,32 @@ type legacyHubApps struct {
 	libapp.Applications
 }
 
-// func createPlanetDockerImage(dir, tag string, c *check.C) {
-// 	dockerfileBytes := []byte(`
-// FROM scratch
-// COPY ./orbit.manifest.json /etc/planet/
-// `)
-// 	planetManifestBytes := []byte(`{}`)
-//
-// 	writeFile(filepath.Join(dir, "Dockerfile"), dockerfileBytes, c)
-// 	writeFile(filepath.Join(dir, "orbit.manifest.json"), planetManifestBytes, c)
-// 	buildDockerImage(dir, tag, c)
-// }
-//
-// func removePlanetDockerImage(c *check.C) {
-// 	removeDockerImage(planetTag)
-// 	removeDockerImage(planetPlainTag)
-// }
-//
-// func buildDockerImage(dir, tag string, c *check.C) {
-// 	out, err := exec.Command("docker", "build", "-t", tag, dir).CombinedOutput()
-// 	c.Assert(err, check.IsNil, check.Commentf(string(out)))
-// }
-//
-// func removeDockerImage(tag string) {
-// 	exec.Command("docker", "rmi", tag).Run()
-// }
+// TODO(dima): swap to docker builder APIs
+func createPlanetDockerImage(dir, tag string, c *check.C) {
+	dockerfileBytes := []byte(`
+FROM scratch
+COPY ./orbit.manifest.json /etc/planet/
+`)
+	planetManifestBytes := []byte(`{}`)
+
+	writeFile(filepath.Join(dir, "Dockerfile"), dockerfileBytes, c)
+	writeFile(filepath.Join(dir, "orbit.manifest.json"), planetManifestBytes, c)
+	buildDockerImage(dir, tag, c)
+}
+
+func removePlanetDockerImage(c *check.C) {
+	removeDockerImage(planetTag)
+	removeDockerImage(planetPlainTag)
+}
+
+func buildDockerImage(dir, tag string, c *check.C) {
+	out, err := exec.Command("docker", "build", "-t", tag, dir).CombinedOutput()
+	c.Assert(err, check.IsNil, check.Commentf(string(out)))
+}
+
+func removeDockerImage(tag string) {
+	exec.Command("docker", "rmi", tag).Run()
+}
 
 func unpackTarball(path, unpackedDir string, c *check.C) *localenv.LocalEnvironment {
 	f, err := os.Open(path)
@@ -831,11 +625,6 @@ func unpackTarball(path, unpackedDir string, c *check.C) *localenv.LocalEnvironm
 	env, err := localenv.New(unpackedDir)
 	c.Assert(err, check.IsNil)
 	return env
-}
-
-func checkDockerAvailable() bool {
-	_, err := docker.NewClientFromEnv()
-	return err == nil
 }
 
 const (

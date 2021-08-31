@@ -30,9 +30,10 @@ import (
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
+	"github.com/gravitational/trace"
 
 	"github.com/coreos/go-semver/semver"
-	"github.com/gravitational/trace"
+	"github.com/sirupsen/logrus"
 )
 
 // Syncer synchronizes the local package cache from a (remote) repository
@@ -92,7 +93,7 @@ func (s *S3Syncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, ma
 		return trace.Wrap(err)
 	}
 	puller := libapp.Puller{
-		FieldLogger: log,
+		FieldLogger: logrus.WithField(trace.Component, "s3:syncer"),
 		SrcPack:     env.Packages,
 		SrcApp:      tarballApps,
 		DstPack:     engine.Env.Packages,
@@ -121,20 +122,22 @@ func NewPackSyncer(pack pack.PackageService, apps libapp.Applications, repo stri
 
 // Sync pulls dependencies from the package/app service not available locally
 func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) error {
-	cacheApps, err := engine.Env.AppServiceLocal(localenv.AppConfig{})
-	if err != nil {
-		return trace.Wrap(err)
+	appWithRuntime := appForRuntime(app, manifest, runtimeVersion)
+	err := libapp.VerifyDependencies(appWithRuntime, engine.Env.Apps, engine.Env.Packages)
+	if err == nil {
+		logrus.Debug("Nothing to sync.")
+		return nil
 	}
 	puller := libapp.Puller{
-		FieldLogger: log,
+		FieldLogger: logrus.WithField(trace.Component, "pack:syncer"),
 		SrcPack:     s.pack,
 		SrcApp:      s.apps,
 		DstPack:     engine.Env.Packages,
-		DstApp:      cacheApps,
+		DstApp:      engine.Env.Apps,
 		Parallel:    engine.Config.Parallel,
 		OnConflict:  libapp.GetDependencyConflictHandler(false),
 	}
-	err = puller.PullAppDeps(ctx, appForRuntime(app, manifest, runtimeVersion))
+	err = puller.PullAppDeps(ctx, appWithRuntime)
 	if err != nil {
 		if utils.IsNetworkError(err) || trace.IsEOF(err) {
 			return trace.ConnectionProblem(err, "failed to download "+
@@ -148,7 +151,6 @@ func (s *PackSyncer) Sync(ctx context.Context, engine *Engine, app loc.Locator, 
 
 var application = loc.Locator{
 	Repository: defaults.SystemAccountOrg,
-	// TODO(dima): use constant from lib/pack (or lib/loc?)
-	Name:    "telekube",
-	Version: loc.ZeroVersion,
+	Name:       defaults.TelekubePackage,
+	Version:    loc.ZeroVersion,
 }

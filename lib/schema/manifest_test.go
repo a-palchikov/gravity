@@ -676,6 +676,7 @@ systemOptions:
 `)
 	m, err := ParseManifestYAMLNoValidate(bytes)
 	c.Assert(err, IsNil)
+	m2 := m.WithBase(loc.Runtime.WithLiteralVersion("0.0.2"))
 
 	c.Assert(m, compare.DeepEquals, &Manifest{
 		Header: Header{
@@ -700,7 +701,6 @@ systemOptions:
 			BaseImage: "quay.io/gravitational/planet:0.0.3",
 		},
 	})
-	m2 := m.WithBase(loc.Runtime.WithLiteralVersion("0.0.2"))
 	c.Assert(m2, compare.DeepEquals, Manifest{
 		Header: Header{
 			TypeMeta: metav1.TypeMeta{

@@ -17,15 +17,11 @@ limitations under the License.
 package cli
 
 import (
-	"testing"
-
 	"github.com/gravitational/gravity/lib/compare"
 	"github.com/gravitational/gravity/lib/storage"
 
 	"gopkg.in/check.v1"
 )
-
-func TestCLI(t *testing.T) { check.TestingT(t) }
 
 type UtilsSuite struct{}
 

@@ -17,16 +17,11 @@ limitations under the License.
 package cli
 
 import (
-	"path/filepath"
 	"testing"
 
-	apptest "github.com/gravitational/gravity/lib/app/service/test"
-	"github.com/gravitational/gravity/lib/blob/fs"
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
-	"github.com/gravitational/gravity/lib/ops/opsservice"
-	"github.com/gravitational/gravity/lib/storage/keyval"
 
 	"gopkg.in/check.v1"
 )
@@ -78,14 +73,14 @@ func (s *S) TestGetsUpdatePackageFromTarballEnviron(c *check.C) {
 }
 
 func createTarballEnviron(stateDir string, c *check.C) {
-	backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(stateDir, defaults.GravityDBFile)})
-	c.Assert(err, check.IsNil)
-	objects, err := fs.New(filepath.Join(stateDir, defaults.PackagesDir))
-	c.Assert(err, check.IsNil)
-	services := opsservice.SetupTestServicesInDirectory(stateDir, backend, objects, c)
-	apptest.CreateRuntimeApplication(services.Apps, c)
-	apptest.CreateDummyApplication(clusterAppUpdate, c, services.Apps)
-	backend.Close()
+	// backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(stateDir, defaults.GravityDBFile)})
+	// c.Assert(err, check.IsNil)
+	// objects, err := fs.New(filepath.Join(stateDir, defaults.PackagesDir))
+	// c.Assert(err, check.IsNil)
+	// // services := opsservice.SetupTestServicesInDirectory(stateDir, backend, objects, c)
+	// // apptest.CreateRuntimeApplication(services.Apps, c)
+	// // apptest.CreateDummyApplication(clusterAppUpdate, c, services.Apps)
+	// backend.Close()
 }
 
 var (

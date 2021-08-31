@@ -22,6 +22,7 @@ import (
 	"github.com/gravitational/trace"
 
 	"github.com/ghodss/yaml"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/batch/v1"
 )
 
@@ -120,7 +121,8 @@ func (h Hook) GetJob() (*v1.Job, error) {
 	}
 	var job v1.Job
 	if err := yaml.Unmarshal([]byte(h.Job), &job); err != nil {
-		return nil, trace.Wrap(err)
+		logrus.WithField("hook", h.Job).Warn("Failed to unmarshal YAML.")
+		return nil, trace.Wrap(err, "unmarshalling hook job YAML")
 	}
 	return &job, nil
 }

@@ -304,7 +304,7 @@ func pullApplications(apps []appservice.Application, localApps, remoteApps *Appl
 			return trace.Wrap(err)
 		}
 
-		_, err = localApps.CreateAppWithManifest(app.Package, manifestBytes, reader, envelope.RuntimeLabels)
+		_, err = localApps.CreateAppWithManifest(app.Package, manifestBytes, reader, app.PackageEnvelope.RuntimeLabels)
 		if err != nil && !trace.IsAlreadyExists(err) {
 			return trace.Wrap(err)
 		}

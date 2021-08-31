@@ -82,7 +82,7 @@ func (b *ApplicationBuilder) Build(ctx context.Context, req ApplicationRequest) 
 	stream, err := b.engine.Vendor(ctx, VendorRequest{
 		SourceDir: req.ChartPath,
 		VendorDir: vendorDir,
-		Manifest:  manifest,
+		Manifest:  *manifest,
 		Vendor:    req.Vendor,
 	})
 	if err != nil {
