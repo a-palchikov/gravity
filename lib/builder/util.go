@@ -26,11 +26,14 @@ import (
 	"github.com/gravitational/gravity/lib/docker"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
-
-	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	"github.com/gravitational/version"
+
+	"github.com/coreos/go-semver/semver"
+	"github.com/sirupsen/logrus"
 )
+
+var log = logrus.WithField(trace.Component, "builder")
 
 // checkOutputPath validates the image output path.
 func checkOutputPath(manifest *schema.Manifest, outputPath string, overwrite bool) (string, error) {
