@@ -1441,9 +1441,19 @@ func (s *site) addClusterConfig(config clusterconfig.Interface, overrideArgs map
 		for k, v := range globalConfig.FeatureGates {
 			features = append(features, fmt.Sprintf("%v=%v", k, v))
 		}
+		// Wether kube-proxy uses endpoints or endpointslices is controlled via
+		// a separate feature gate introduced in k8s v1.18 (EndpointSliceProxying).
+		// If EndpointSlices are explicitly turned off, turn off EndpointSliceProxying as well.
+		// TODO(dima): add this to 9.x/master
+		if _, ok := globalConfig.FeatureGates["EndpointSliceProxying"]; !ok {
+			if enabled, ok := globalConfig.FeatureGates["EndpointSlice"]; ok && !enabled {
+				features = append(features, "EndpointSliceProxying=false")
+			}
+		}
 		args = append(args,
 			fmt.Sprintf("--feature-gates=%v", strings.Join(features, ",")))
 	}
+
 	if globalConfig.HighAvailability {
 		args = append(args, "--high-availability")
 	}
