@@ -11,7 +11,7 @@ K8S_VER := 1.19.12
 # 1.13.5 -> 11305, 1.13.12 -> 11312, 2.0.0 -> 20000 and so on
 K8S_VER_SUFFIX ?= $(shell printf "%d%02d%02d" $(shell echo $(K8S_VER) | sed "s/\./ /g"))
 #PLANET_TAG ?= 8.0.4-$(K8S_VER_SUFFIX)
-PLANET_TAG ?= 8.0.2-$(K8S_VER_SUFFIX)-4-g0cb9c62
+PLANET_TAG ?= 8.0.2-$(K8S_VER_SUFFIX)-3-ga90a74f
 PLANET_BRANCH ?= $(PLANET_TAG)
 # system applications
 INGRESS_APP_TAG ?= 0.0.1
