@@ -37,13 +37,13 @@ import (
 	"github.com/gravitational/gravity/lib/update"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/rigging"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-
 	teleservices "github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/trace"
+
+	"github.com/coreos/go-semver/semver"
 	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -87,7 +87,7 @@ func InitOperationPlan(
 
 	dnsConfig := cluster.DNSConfig
 	if dnsConfig.IsEmpty() {
-		log.Info("Detecting DNS configuration.")
+		logrus.Info("Detecting DNS configuration.")
 		existingDNS, err := getExistingDNSConfig(localEnv.Packages)
 		if err != nil {
 			return nil, trace.Wrap(err, "failed to determine existing cluster DNS configuration")
@@ -156,6 +156,10 @@ func NewOperationPlan(config PlanConfig) (*storage.OperationPlan, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	installedRuntimeVersion, err := installedRuntime.Package.SemVer()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 
 	updatePackage, err := config.Operation.Update.Package()
 	if err != nil {
@@ -186,7 +190,9 @@ func NewOperationPlan(config PlanConfig) (*storage.OperationPlan, error) {
 
 	updates, err := configUpdates(
 		installedApp.Manifest, updateApp.Manifest,
-		config.Operator, (*ops.SiteOperation)(config.Operation).Key(), servers)
+		config.Operator,
+		*installedRuntimeVersion,
+		(*ops.SiteOperation)(config.Operation).Key(), servers)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -343,10 +349,10 @@ func newOperationPlan(p planConfig) (*storage.OperationPlan, error) {
 	}
 	supportsTaints, err := supportsTaints(*installedGravityPackage)
 	if err != nil {
-		log.WithError(err).Warn("Failed to query support for taints/tolerations in installed runtime.")
+		logrus.WithError(err).Warn("Failed to query support for taints/tolerations in installed runtime.")
 	}
 	if !supportsTaints {
-		log.Debugf("No support for taints/tolerations for %v.", installedGravityPackage)
+		logrus.Debugf("No support for taints/tolerations for %v.", installedGravityPackage)
 	}
 
 	mastersPhase := *builder.masters(p.leadMaster, otherMasters, supportsTaints).
@@ -448,6 +454,7 @@ func newOperationPlan(p planConfig) (*storage.OperationPlan, error) {
 func configUpdates(
 	installed, update schema.Manifest,
 	operator packageRotator,
+	installedRuntimeVersion semver.Version,
 	operation ops.SiteOperationKey,
 	servers []storage.Server,
 ) (updates []storage.UpdateServer, err error) {
@@ -499,6 +506,7 @@ func configUpdates(
 				Manifest:       update,
 				RuntimePackage: *updateRuntime,
 				DryRun:         true,
+				UpgradeFrom:    &installedRuntimeVersion,
 			})
 			if err != nil {
 				return nil, trace.Wrap(err)

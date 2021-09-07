@@ -40,16 +40,17 @@ import (
 	"github.com/gravitational/gravity/lib/transfer"
 	"github.com/gravitational/gravity/lib/utils"
 
+	"github.com/gravitational/configure"
+	"github.com/gravitational/license/authority"
 	teleetcd "github.com/gravitational/teleport/lib/backend/etcdbk"
 	telecfg "github.com/gravitational/teleport/lib/config"
 	teledefaults "github.com/gravitational/teleport/lib/defaults"
 	teleservices "github.com/gravitational/teleport/lib/services"
 	teleutils "github.com/gravitational/teleport/lib/utils"
+	"github.com/gravitational/trace"
 
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/gravitational/configure"
-	"github.com/gravitational/license/authority"
-	"github.com/gravitational/trace"
+	"github.com/coreos/go-semver/semver"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
@@ -900,6 +901,12 @@ func (s *site) getPlanetConfig(config planetConfig) (args []string, err error) {
 		fmt.Sprintf("--service-uid=%v", s.uid()),
 		fmt.Sprintf("--service-gid=%v", s.gid()),
 	}
+
+	if config.installedRuntimeVersion != nil {
+		log.WithField("version", fmt.Sprintf("%#v", config.installedRuntimeVersion)).Info("Specified installed runtime version - will set upgrade-from.")
+		args = append(args, fmt.Sprintf("--upgrade-from=%v", config.installedRuntimeVersion.String()))
+	}
+
 	overrideArgs := map[string]string{
 		"service-subnet": config.serviceSubnet(),
 		"pod-subnet":     config.podSubnet(),
@@ -1065,6 +1072,9 @@ type planetConfig struct {
 	env map[string]string
 	// config specifies optional cluster configuration
 	config clusterconfig.Interface
+	// installedRuntimeVersion optionally specifies the version of the runtime application
+	// on the existing cluster for the upgrade operation
+	installedRuntimeVersion *semver.Version
 }
 
 // getPrincipals returns a list of SANs (x509's Subject Alternative Names)

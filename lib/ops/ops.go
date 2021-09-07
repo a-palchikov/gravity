@@ -42,6 +42,7 @@ import (
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/signer"
+	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/license"
 	"github.com/gravitational/license/authority"
 	"github.com/gravitational/satellite/agent/proto/agentpb"
@@ -1182,6 +1183,8 @@ type RotatePlanetConfigRequest struct {
 	Package *loc.Locator `json:"package,omitempty"`
 	// DryRun specifies whether only the package locator is generated
 	DryRun bool `json:"dry_run"`
+	// UpgradeFrom optionally specifies the installed runtime application version
+	UpgradeFrom *semver.Version `json:"upgrade_from,omitempty"`
 }
 
 // Check validates this request

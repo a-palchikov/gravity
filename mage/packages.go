@@ -102,6 +102,7 @@ var (
 		},
 		include: []string{"resources", "registry"},
 		srcDir:  "assets/site-app",
+		force:   true,
 	}
 
 	pkgMonitoringApp = gravityPackage{
