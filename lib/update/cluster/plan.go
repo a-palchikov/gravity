@@ -42,6 +42,7 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -160,6 +161,7 @@ func NewOperationPlan(config PlanConfig) (*storage.OperationPlan, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	log.WithField("version", installedRuntimeVersion.String()).Info("New operation plan from previous runtime version.")
 
 	updatePackage, err := config.Operation.Update.Package()
 	if err != nil {

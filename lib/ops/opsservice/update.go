@@ -18,7 +18,6 @@ package opsservice
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/gravitational/gravity/lib/app"
@@ -173,7 +172,7 @@ func (o *Operator) getNodeProfile(operation ops.SiteOperation, node storage.Serv
 
 // RotatePlanetConfig rotates planet configuration package for the server specified in the request
 func (o *Operator) RotatePlanetConfig(req ops.RotatePlanetConfigRequest) (*ops.RotatePackageResponse, error) {
-	log.WithField("req", fmt.Sprintf("%#v", req)).Info("New runtime configuration.")
+	// log.WithField("req", fmt.Sprintf("%#v", req)).Info("New runtime configuration.")
 	if err := req.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}

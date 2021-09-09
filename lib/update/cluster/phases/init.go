@@ -35,6 +35,7 @@ import (
 	"github.com/gravitational/gravity/lib/storage/clusterconfig"
 	"github.com/gravitational/gravity/lib/users"
 
+	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/rigging"
 	"github.com/gravitational/trace"
 	log "github.com/sirupsen/logrus"
@@ -71,14 +72,13 @@ type updatePhaseInit struct {
 	log.FieldLogger
 	// updateManifest specifies the manifest of the update application
 	updateManifest schema.Manifest
-	// installedApp references the installed application instance
-	installedApp app.Application
 	// existingDocker describes the existing Docker configuration
 	existingDocker             storage.DockerConfig
 	existingDNS                storage.DNSConfig
 	existingEnviron            map[string]string
 	existingClusterConfigBytes []byte
 	existingClusterConfig      clusterconfig.Interface
+	existingRuntimeVersion     semver.Version
 }
 
 // NewUpdatePhaseInit creates a new update init phase executor
@@ -121,6 +121,14 @@ func NewUpdatePhaseInit(
 	if err != nil {
 		return nil, trace.Wrap(err, "failed to query installed application")
 	}
+	runtimeApp := installedApp.Manifest.Base()
+	if runtimeApp == nil {
+		return nil, trace.BadParameter("failed to query installed runtime application")
+	}
+	runtimeVersion, err := runtimeApp.SemVer()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	env, err := operator.GetClusterEnvironmentVariables(operation.ClusterKey())
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -149,7 +157,7 @@ func NewUpdatePhaseInit(
 		Servers:                    p.Phase.Data.Update.Servers,
 		FieldLogger:                logger,
 		updateManifest:             app.Manifest,
-		installedApp:               *installedApp,
+		existingRuntimeVersion:     *runtimeVersion,
 		existingDocker:             existingDocker,
 		existingDNS:                p.Plan.DNSConfig,
 		existingClusterConfigBytes: configBytes,
@@ -440,6 +448,7 @@ func (p *updatePhaseInit) rotatePlanetConfig(server storage.UpdateServer) error 
 		Package:        &server.Runtime.Update.ConfigPackage,
 		Config:         p.existingClusterConfigBytes,
 		Env:            p.existingEnviron,
+		UpgradeFrom:    &p.existingRuntimeVersion,
 	})
 	if err != nil {
 		return trace.Wrap(err)

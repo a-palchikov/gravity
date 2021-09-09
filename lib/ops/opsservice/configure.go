@@ -902,9 +902,8 @@ func (s *site) getPlanetConfig(config planetConfig) (args []string, err error) {
 		fmt.Sprintf("--service-gid=%v", s.gid()),
 	}
 
-	if config.installedRuntimeVersion != nil {
-		log.WithField("version", fmt.Sprintf("%#v", config.installedRuntimeVersion)).Info("Specified installed runtime version - will set upgrade-from.")
-		args = append(args, fmt.Sprintf("--upgrade-from=%v", config.installedRuntimeVersion.String()))
+	if config.installedRuntimeVersion != nil && config.installedRuntimeVersion.Major == 7 {
+		args = append(args, "--upgrade-from7")
 	}
 
 	overrideArgs := map[string]string{

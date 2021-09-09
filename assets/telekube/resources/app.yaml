@@ -144,9 +144,6 @@ nodeProfiles:
 hooks:
   preUpdate:
     job: file://preUpdate.yaml
-ingress:
-  nginx:
-    enabled: true
 storage:
   openebs:
     enabled: false

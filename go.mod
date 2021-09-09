@@ -10,6 +10,7 @@ require (
 	github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
 	github.com/aws/aws-sdk-go v1.37.15
+	github.com/blang/semver v3.5.1+incompatible
 	github.com/boltdb/bolt v1.3.1
 	github.com/boombuler/barcode v0.0.0-20161226211916-fe0f26ff6d26 // indirect
 	github.com/buger/goterm v0.0.0-20140416104154-af3f07dadc88
