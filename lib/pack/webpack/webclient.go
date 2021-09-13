@@ -144,6 +144,9 @@ func (c *Client) createOrUpsertPackage(loc loc.Locator, data io.Reader, upsert b
 		Name:     "package",
 		Filename: loc.String(),
 		Reader:   data,
+		Header: map[string]string{
+			"X-Gravity-Package": loc.String(),
+		},
 	}
 	pkg := storage.Package{
 		Repository: loc.Repository,

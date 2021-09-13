@@ -441,6 +441,9 @@ func (c *Client) createApp(locator loc.Locator, manifest []byte, reader io.Reade
 		Name:     "package",
 		Filename: locator.String(),
 		Reader:   reader,
+		Header: map[string]string{
+			"X-Gravity-Package": locator.String(),
+		},
 	}
 	labelsJSON, err := json.Marshal(labels)
 	if err != nil {

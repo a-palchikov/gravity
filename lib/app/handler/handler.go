@@ -576,7 +576,7 @@ func (h *WebHandler) createApp(w http.ResponseWriter, req *http.Request,
 	}()
 
 	reader := files[0]
-	appPackageName := reader.Name()
+	appPackageName := reader.Header()["X-Gravity-Package"][0]
 	locator, err := loc.ParseLocator(appPackageName)
 	if err != nil {
 		return trace.BadParameter(err.Error())

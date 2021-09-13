@@ -209,13 +209,16 @@ var Methods = []string{
 // WriteError serializes the given error into the provided response writer.
 // The amount of serialized information depends on the HTTP headers.
 func WriteError(w http.ResponseWriter, err error, hdr http.Header) {
-	if hdr.Get(clientIDHeader) != gravityCLIClientID {
+	if !debug && hdr.Get(clientIDHeader) != gravityCLIClientID {
 		// Remove stack traces if this is not a gravity client
 		trace.WriteError(w, trace.Unwrap(err))
 		return
 	}
 	trace.WriteError(w, err)
 }
+
+// Turn this flag on to see cross-service stack traces
+var debug = false
 
 const (
 	clientIDHeader     = "X-Gravity-Client-ID"
