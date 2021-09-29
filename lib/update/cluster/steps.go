@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/constants"
@@ -43,13 +44,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (r *phaseBuilder) initSteps(ctx context.Context) error {
+func (r *phaseBuilder) initSteps(ctx context.Context) (err error) {
+	var installedOrUpgradedEtcdVersion *semver.Version
 	if !r.isDirectUpgrade() {
-		steps, err := r.buildIntermediateSteps(ctx)
+		r.steps, installedOrUpgradedEtcdVersion, err = r.buildIntermediateSteps(ctx)
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		r.steps = steps
 	}
 	installedRuntimeFunc := getRuntimePackageFromManifest(r.installedApp.Manifest)
 	updateRuntimeFunc := getRuntimePackageFromManifest(r.updateApp.Manifest)
@@ -71,11 +72,27 @@ func (r *phaseBuilder) initSteps(ctx context.Context) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	etcd, err := shouldUpdateEtcd(installedRuntimeApp, r.updateRuntimeApp, r.packages)
+	if installedOrUpgradedEtcdVersion == nil {
+		installedOrUpgradedEtcdVersion, err = getEtcdVersionFromManifest(r.installedApp.Manifest, r.packages)
+		// TODO(dima): drop support for 6.1 issues
+		if err != nil && !trace.IsNotFound(err) {
+			// Several versions of gravity 6.1 have corrupted planet metadata for the etcd version.
+			// If we fail to parse the etcd version, fallback to the currentEtcdVersion included below.
+			// https://github.com/gravitational/gravity/issues/2031
+			if !strings.Contains(err.Error(), "REPLACE_ETCD_LATEST_VERSION") {
+				return trace.Wrap(err)
+			}
+		}
+	}
+	if installedOrUpgradedEtcdVersion == nil {
+		installedOrUpgradedEtcdVersion = &r.currentEtcdVersion
+	}
+	updateEtcdVersion, err := getEtcdVersionFromManifest(r.updateApp.Manifest, r.packages)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	// check if OpenEBS itegration has been enabled in the new application
+	etcd := shouldUpdateEtcd(*installedOrUpgradedEtcdVersion, *updateEtcdVersion)
+	// check if OpenEBS integration has been enabled in the new application
 	openEBSEnabled := !r.installedApp.Manifest.OpenEBSEnabled() && r.updateApp.Manifest.OpenEBSEnabled()
 	r.targetStep = newTargetUpdateStep(updateStep{
 		servers:        serverUpdates,
@@ -93,10 +110,10 @@ func (r phaseBuilder) hasRuntimeUpdates() bool {
 	return len(r.steps) != 0 || len(r.targetStep.runtimeUpdates) != 0
 }
 
-func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []intermediateUpdateStep, err error) {
+func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []intermediateUpdateStep, lastUpgradeEtcdVersion *semver.Version, err error) {
 	result, err := r.collectIntermediateSteps()
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
 	updates = make([]intermediateUpdateStep, 0, len(result))
 	prevRuntimeApp := r.installedRuntimeApp
@@ -104,12 +121,18 @@ func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []interme
 	prevRuntimeFunc := getRuntimePackageFromManifest(r.installedApp.Manifest)
 	for version, update := range result {
 		if err := update.validate(); err != nil {
-			return nil, trace.Wrap(err)
+			return nil, nil, trace.Wrap(err)
 		}
-		update.etcd, err = shouldUpdateEtcd(prevRuntimeApp, update.runtimeApp, r.packages)
+		installedEtcdVersion, err := getEtcdVersionFromManifest(prevRuntimeApp.Manifest, r.packages)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, nil, trace.Wrap(err)
 		}
+		updateEtcdVersion, err := getEtcdVersionFromManifest(update.runtimeApp.Manifest, r.packages)
+		if err != nil {
+			return nil, nil, trace.Wrap(err)
+		}
+		lastUpgradeEtcdVersion = updateEtcdVersion
+		update.etcd = shouldUpdateEtcd(*installedEtcdVersion, *updateEtcdVersion)
 		result[version] = update
 		serverUpdates, err := r.intermediateConfigUpdates(
 			r.installedApp.Manifest,
@@ -117,13 +140,13 @@ func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []interme
 			prevTeleport, &update.teleport,
 			r.operator)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, nil, trace.Wrap(err)
 		}
 		log.WithField("updates", serverUpdates).Info("Intermediate server upgrade step.")
 		update.servers = serverUpdates
 		update.runtimeUpdates, err = runtimeUpdates(prevRuntimeApp, update.runtimeApp, r.installedApp)
 		if err != nil {
-			return nil, trace.Wrap(err)
+			return nil, nil, trace.Wrap(err)
 		}
 		updates = append(updates, update)
 		prevRuntimeApp = update.runtimeApp
@@ -131,7 +154,7 @@ func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []interme
 		prevRuntimeFunc = getRuntimePackageStatic(update.runtime)
 	}
 	sort.Sort(updatesByVersion(updates))
-	return updates, nil
+	return updates, lastUpgradeEtcdVersion, nil
 }
 
 func (r phaseBuilder) collectIntermediateSteps() (result map[string]intermediateUpdateStep, err error) {
@@ -553,8 +576,7 @@ func (r updateStep) addTo(root *builder.Phase, masters, nodes []storage.UpdateSe
 		root.AddParallel(r.etcdPhase(
 			leadMaster.Server,
 			serversToStorage(masters[1:]...),
-			serversToStorage(nodes...)),
-		)
+		))
 	}
 	phases := []*builder.Phase{
 		// The "config" phase pulls new teleport master config packages used
@@ -623,7 +645,7 @@ func (r updateStep) configPhase(nodes []storage.Server) *builder.Phase {
 	return root
 }
 
-func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.Server, workers []storage.Server) *builder.Phase {
+func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.Server) *builder.Phase {
 	description := fmt.Sprintf("Upgrade etcd %v to %v", r.etcd.installed, r.etcd.update)
 	if r.etcd.installed == "" {
 		description = fmt.Sprintf("Upgrade etcd to %v", r.etcd.update)
@@ -663,10 +685,6 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 		p := r.etcdShutdownNodePhase(server, false)
 		shutdownEtcd.AddWithDependency(builder.DependencyForServer(backupEtcd, server), p)
 	}
-	for _, server := range workers {
-		p := r.etcdShutdownNodePhase(server, false)
-		shutdownEtcd.AddParallel(p)
-	}
 
 	root.AddParallel(shutdownEtcd)
 
@@ -683,10 +701,6 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 		r.etcdUpgradePhase(leadMaster))
 
 	for _, server := range otherMasters {
-		p := r.etcdUpgradePhase(server)
-		upgradeServers.AddWithDependency(builder.DependencyForServer(shutdownEtcd, server), p)
-	}
-	for _, server := range workers {
 		p := r.etcdUpgradePhase(server)
 		upgradeServers.AddWithDependency(builder.DependencyForServer(shutdownEtcd, server), p)
 	}
@@ -720,10 +734,6 @@ func (r updateStep) etcdPhase(leadMaster storage.Server, otherMasters []storage.
 	for _, server := range otherMasters {
 		p := r.etcdRestartPhase(server)
 		restartMasters.AddWithDependency(builder.DependencyForServer(migrateData, server), p)
-	}
-	for _, server := range workers {
-		p := r.etcdRestartPhase(server)
-		restartMasters.AddWithDependency(builder.DependencyForServer(upgradeServers, server), p)
 	}
 
 	// also restart gravity-site, so that elections get unbroken

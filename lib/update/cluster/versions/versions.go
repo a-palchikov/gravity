@@ -72,8 +72,7 @@ var (
 	//
 	// Specified versions are treated as described above.
 	UpgradeViaVersions = map[*semver.Version]Versions{
-		// Upgrades from 5.5.10 and on are possible via a 6.1.x release.
-		semver.New("5.5.10"): {semver.New("6.1.0")},
+		semver.New("7.0.0"): {semver.New("8.0.0")},
 	}
 )
 

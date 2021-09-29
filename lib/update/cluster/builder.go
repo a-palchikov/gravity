@@ -246,6 +246,9 @@ type phaseBuilder struct {
 	steps []intermediateUpdateStep
 	// targetStep defines the final runtime update step
 	targetStep targetUpdateStep
+	// currentEtcdVersion specifies the etcd version of the
+	// installed cluster
+	currentEtcdVersion semver.Version
 	// userConfig combines operation-specific custom configuration
 	userConfig UserConfig
 }

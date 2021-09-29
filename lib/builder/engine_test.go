@@ -19,11 +19,13 @@ package builder
 import (
 	"testing"
 
-	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/trace"
 	"github.com/gravitational/version"
+
+	"github.com/coreos/go-semver/semver"
+	"github.com/sirupsen/logrus"
 	check "gopkg.in/check.v1"
 )
 
@@ -75,6 +77,7 @@ func (s *BuilderSuite) TestSelectRuntimeVersion(c *check.C) {
 	b := &Engine{
 		Config: Config{
 			Progress: utils.DiscardProgress,
+			Logger:   logrus.WithField("test", c.TestName()),
 		},
 	}
 

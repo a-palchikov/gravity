@@ -23,13 +23,10 @@ import (
 	"strconv"
 
 	"github.com/gravitational/gravity/lib/app"
-	apptest "github.com/gravitational/gravity/lib/app/service/test"
-	"github.com/gravitational/gravity/lib/archive"
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
-	"github.com/gravitational/gravity/lib/ops/opsservice"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/storage"
@@ -151,7 +148,7 @@ func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
 			params.coreDNS("/bootstrap"),
 			params.masters(leadMaster, updates[0:1], gravityPackage, "id", "/coredns"),
 			params.nodes(updates[2:], leadMaster.Server, gravityPackage, "id", "/masters"),
-			params.etcd(leadMaster.Server, updates[0:1], updates[2:], *params.targetStep.etcd),
+			params.etcd(leadMaster.Server, updates[0:1], *params.targetStep.etcd),
 			params.config("/etcd"),
 			params.runtime(runtimeUpdates, "/config"),
 			params.migration("/runtime"),
@@ -372,7 +369,6 @@ func (s *PlanSuite) TestPlanWithIntermediateRuntimeUpdate(c *check.C) {
 				params.nodes(intermediateNodes, intermediateLeadMaster.Server, intermediateGravityPackage, "id2", "/masters"),
 				params.etcd(intermediateLeadMaster.Server,
 					intermediateOtherMasters,
-					intermediateNodes,
 					*params.steps[0].etcd),
 				params.config("/etcd"),
 				params.runtime(intermediateRuntimeUpdates, "/config"),
@@ -382,7 +378,7 @@ func (s *PlanSuite) TestPlanWithIntermediateRuntimeUpdate(c *check.C) {
 				params.coreDNS("/bootstrap"),
 				params.masters(leadMaster, otherMasters, gravityPackage, "id", "/coredns"),
 				params.nodes(nodes, leadMaster.Server, gravityPackage, "id", "/masters"),
-				params.etcd(leadMaster.Server, otherMasters, nodes, *params.targetStep.etcd),
+				params.etcd(leadMaster.Server, otherMasters, *params.targetStep.etcd),
 				params.config("/etcd"),
 				params.runtime(runtimeUpdates, "/config"),
 			),
@@ -393,6 +389,8 @@ func (s *PlanSuite) TestPlanWithIntermediateRuntimeUpdate(c *check.C) {
 	})
 }
 
+// TODO(dima): test whether to upgrade etcd based on the constructed plan
+/*
 func (s *PlanSuite) TestUpdatesEtcdFromManifestWithoutLabels(c *check.C) {
 	services := opsservice.SetupTestServices(c)
 	runtimePackage := loc.MustParseLocator("example.com/runtime:1.0.0")
@@ -438,8 +436,7 @@ func (s *PlanSuite) TestUpdatesEtcdFromManifestWithoutLabels(c *check.C) {
 			},
 		}},
 	}
-	version, err := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp, services.Packages)
-	c.Assert(err, check.IsNil)
+	version := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp)
 	c.Assert(version, check.DeepEquals, &etcdVersion{
 		update: "3.3.3",
 	})
@@ -498,13 +495,13 @@ func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 			},
 		}},
 	}
-	version, err := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp, b.packages)
-	c.Assert(err, check.IsNil)
+	version := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp)
 	c.Assert(version, check.DeepEquals, &etcdVersion{
 		installed: "3.3.2",
 		update:    "3.3.3",
 	})
 }
+*/
 
 func newBuilder(c *check.C, params params) phaseBuilder {
 	builder := phaseBuilder{
@@ -1007,7 +1004,7 @@ func (r *params) bootstrapNodeVersioned(server storage.UpdateServer, version str
 	}
 }
 
-func (r params) etcd(leadMaster storage.Server, otherMasters, nodes []storage.UpdateServer, etcd etcdVersion) storage.OperationPhase {
+func (r params) etcd(leadMaster storage.Server, otherMasters []storage.UpdateServer, etcd etcdVersion) storage.OperationPhase {
 	return storage.OperationPhase{
 		ID:          "/etcd",
 		Description: fmt.Sprintf("Upgrade etcd %v to %v", etcd.installed, etcd.update),
@@ -1029,7 +1026,6 @@ func (r params) etcd(leadMaster storage.Server, otherMasters, nodes []storage.Up
 					r.etcdShutdownNode(leadMaster, true),
 					// FIXME: assumes len(otherMasters) == 1
 					r.etcdShutdownNode(otherMasters[0].Server, false),
-					r.etcdShutdownWorkerNode(nodes[0].Server),
 				},
 			},
 			{
@@ -1041,7 +1037,6 @@ func (r params) etcd(leadMaster storage.Server, otherMasters, nodes []storage.Up
 					// FIXME: assumes len(otherMasters) == 1
 					r.etcdUpgradeNode(otherMasters[0].Server),
 					// upgrade regular nodes
-					r.etcdUpgradeNode(nodes[0].Server),
 				},
 			},
 			{
@@ -1061,7 +1056,6 @@ func (r params) etcd(leadMaster storage.Server, otherMasters, nodes []storage.Up
 					r.etcdRestartLeaderNode(leadMaster),
 					// FIXME: assumes len(otherMasters) == 1
 					r.etcdRestartNode(otherMasters[0].Server),
-					r.etcdRestartWorkerNode(nodes[0].Server),
 					r.etcdRestartGravity(leadMaster),
 				},
 			},

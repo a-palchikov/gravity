@@ -167,7 +167,17 @@ func (m *Manifest) SetBase(locator loc.Locator) {
 // WithBase returns a copy of this manifest with the specified base application
 func (m *Manifest) WithBase(locator loc.Locator) Manifest {
 	result := *m
-	result.SetBase(locator)
+	if m.BaseImage != nil {
+		result.BaseImage = &BaseImage{Locator: locator}
+	}
+	if m.SystemOptions != nil {
+		systemOptions := *m.SystemOptions
+		result.SystemOptions = &systemOptions
+	} else {
+		result.SystemOptions = &SystemOptions{}
+	}
+	// Reset the runtime with the specified locator
+	result.SystemOptions.Runtime = &Runtime{Locator: locator}
 	return result
 }
 
@@ -336,12 +346,23 @@ func (m Manifest) RuntimePackage(profile NodeProfile) (*loc.Locator, error) {
 	return m.DefaultRuntimePackage()
 }
 
-// DefaultRuntimePackage returns the default runtime package
+// DefaultRuntimePackage returns the global runtime package
 func (m Manifest) DefaultRuntimePackage() (*loc.Locator, error) {
 	if m.SystemOptions == nil || m.SystemOptions.Dependencies.Runtime == nil {
-		return nil, trace.NotFound("no runtime specified in manifest")
+		return m.LegacyRuntimePackage()
 	}
 	return &m.SystemOptions.Dependencies.Runtime.Locator, nil
+}
+
+// LegacyRuntimePackage returns the global runtime package if the manifest has been preprocessed by
+// the legacy hub. In this case, the planet package is taken from the list of general package dependencies
+func (m Manifest) LegacyRuntimePackage() (*loc.Locator, error) {
+	for _, dep := range m.Dependencies.Packages {
+		if loc.IsPlanetPackage(dep.Locator) {
+			return &dep.Locator, nil
+		}
+	}
+	return nil, trace.NotFound("no runtime specified in manifest")
 }
 
 // RuntimeImages returns the list of all runtime images.

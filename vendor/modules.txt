@@ -442,7 +442,7 @@ github.com/gravitational/configure/schema
 # github.com/gravitational/coordinate v0.0.0-20180225144834-2bc9a83f6fe2
 github.com/gravitational/coordinate/config
 github.com/gravitational/coordinate/leader
-# github.com/gravitational/form v0.0.0-20151109031454-c4048f792f70
+# github.com/gravitational/form v0.0.0-20151109031454-c4048f792f70 => github.com/a-palchikov/form v0.0.0-20210913120056-1909122b70fb
 github.com/gravitational/form
 # github.com/gravitational/go-vhost v0.0.0-20171024163855-94d0c42e3263
 github.com/gravitational/go-vhost
@@ -464,7 +464,7 @@ github.com/gravitational/oxy/ratelimit
 github.com/gravitational/oxy/utils
 # github.com/gravitational/rigging v0.0.0-20210330165731-4602e892394d
 github.com/gravitational/rigging
-# github.com/gravitational/roundtrip v1.0.0
+# github.com/gravitational/roundtrip v1.0.0 => github.com/a-palchikov/roundtrip v0.0.0-20210913120914-ecdfb99c2f14
 github.com/gravitational/roundtrip
 # github.com/gravitational/satellite v0.0.9-0.20210518231730-758163e22217
 github.com/gravitational/satellite/agent
