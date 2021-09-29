@@ -18,10 +18,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,14 +33,37 @@ import (
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/pack"
+	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/gravity/tool/common"
-	"github.com/opencontainers/selinux/go-selinux"
 
-	"github.com/docker/docker/pkg/archive"
 	"github.com/gravitational/configure"
 	"github.com/gravitational/trace"
+
+	"github.com/docker/docker/pkg/archive"
+	"github.com/opencontainers/selinux/go-selinux"
 )
+
+func outputPackageManifest(env *localenv.LocalEnvironment, loc loc.Locator, format string) error {
+	packageService, err := env.PackageService("")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	hdr, err := packageService.ReadPackageEnvelope(loc)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if strings.ToLower(format) == "yaml" {
+		env.Println(string(hdr.Manifest))
+		return nil
+	}
+	m, err := schema.ParseManifestYAMLNoValidate(hdr.Manifest)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	return trace.Wrap(enc.Encode(&m))
+}
 
 func importPackage(env *localenv.LocalEnvironment, path string, loc loc.Locator, checkManifest bool, opsCenterURL string,
 	labels map[string]string) error {
@@ -318,39 +343,41 @@ func executePackageCommand(s *localenv.LocalEnvironment, cmd string, loc loc.Loc
 	return syscall.Exec(command.Args[0], args, env)
 }
 
-func pushPackage(app *localenv.LocalEnvironment, loc loc.Locator, opsCenterURL string) error {
-	dstPackages, err := app.PackageService(opsCenterURL)
+func pushPackage(env *localenv.LocalEnvironment, loc loc.Locator, destination string) error {
+	dstPackages, closer, err := env.PackageServiceFromURL(destination)
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer closer()
 
 	puller := libapp.Puller{
-		SrcPack:  app.Packages,
+		SrcPack:  env.Packages,
 		DstPack:  dstPackages,
-		Progress: app.Reporter,
+		Progress: env.Reporter,
 	}
 	err = puller.PullPackage(context.TODO(), loc)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	app.Printf("%v pushed to %v\n", loc, opsCenterURL)
+	env.Printf("%v pushed to %v\n", loc, destination)
 	return nil
 }
 
-func pullPackage(app *localenv.LocalEnvironment, loc loc.Locator, opsCenterURL string, labels map[string]string, force bool) error {
-	log.Infof("start download: %v from %v", loc, opsCenterURL)
+func pullPackage(env *localenv.LocalEnvironment, loc loc.Locator, source string, labels map[string]string, force bool) error {
+	log.Infof("Start download: %v from %v", loc, source)
 
-	sourcePackages, err := app.PackageService(opsCenterURL)
+	sourcePackages, closer, err := env.PackageServiceFromURL(source)
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer closer()
 
 	puller := libapp.Puller{
 		SrcPack:  sourcePackages,
-		DstPack:  app.Packages,
+		DstPack:  env.Packages,
 		Labels:   labels,
-		Progress: app.Reporter,
+		Progress: env.Reporter,
 		Upsert:   force,
 	}
 	err = puller.PullPackage(context.TODO(), loc)
@@ -358,7 +385,7 @@ func pullPackage(app *localenv.LocalEnvironment, loc loc.Locator, opsCenterURL s
 		return trace.Wrap(err)
 	}
 
-	app.Printf("%v pulled from %v\n", loc, opsCenterURL)
+	env.Printf("%v pulled from %v\n", loc, source)
 	return nil
 }
 

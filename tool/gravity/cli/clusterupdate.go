@@ -138,7 +138,7 @@ func updateTrigger(localEnv, updateEnv *localenv.LocalEnvironment, config upgrad
 		// The cluster is updating in background
 		return nil
 	}
-	localEnv.Println(updateClusterManualOperationBanner)
+	localEnv.Printf(updateClusterManualOperationBanner, updater.Operation.ID)
 	return nil
 }
 
@@ -146,7 +146,7 @@ func newClusterUpdater(
 	ctx context.Context,
 	localEnv, updateEnv *localenv.LocalEnvironment,
 	config upgradeConfig,
-) (updater, error) {
+) (*update.Updater, error) {
 	init := &clusterInitializer{
 		updatePackage: config.upgradePackage,
 		unattended:    !config.manual,
@@ -379,13 +379,24 @@ func setUpdatePhaseForOperation(env *localenv.LocalEnvironment, environ LocalEnv
 	return updater.SetPhase(context.TODO(), params.PhaseID, params.State)
 }
 
-func completeUpdatePlanForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, operation ops.SiteOperation) error {
+func completeUpdatePlanForOperation(env *localenv.LocalEnvironment, environ LocalEnvironmentFactory, operation clusterOperation) error {
+	clusterEnv, err := env.NewClusterEnvironment()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	if isInvalidOperation(operation) {
+		log.WithField("op", operation.SiteOperation.String()).Warn("Operation is invalid, activate cluster directly.")
+		return clusterEnv.Operator.ActivateSite(ops.ActivateSiteRequest{
+			AccountID:  operation.SiteOperation.AccountID,
+			SiteDomain: operation.SiteOperation.SiteDomain,
+		})
+	}
 	updateEnv, err := environ.NewUpdateEnv()
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	defer updateEnv.Close()
-	updater, err := getClusterUpdater(env, updateEnv, operation, true)
+	updater, err := getClusterUpdater(env, updateEnv, operation.SiteOperation, true)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -465,7 +476,10 @@ func (r *clusterInitializer) validate(localEnv *localenv.LocalEnvironment, clust
 		return trace.Wrap(err)
 	}
 	if err := checkCanUpdate(clusterEnv.ClusterPackages, installedRuntimeAppVersion, updateRuntimeAppVersion); err != nil {
-		return trace.Wrap(err)
+		if !r.force {
+			return trace.Wrap(err)
+		}
+		log.WithError(err).Info("Unsupported update path overridden with force.")
 	}
 	if err := r.checkRuntimeEnvironment(localEnv, cluster, clusterEnv.Operator); err != nil {
 		return trace.Wrap(err)
@@ -597,7 +611,7 @@ func getRuntimeAppVersion(apps app.Applications, loc loc.Locator) (*semver.Versi
 }
 
 const (
-	updateClusterManualOperationBanner = `The operation has been created in manual mode.
+	updateClusterManualOperationBanner = `The operation %v has been created in manual mode.
 
 See https://gravitational.com/gravity/docs/cluster/#managing-operations for details on working with operation plan.`
 )

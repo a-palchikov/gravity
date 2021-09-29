@@ -317,13 +317,14 @@ func deleteApp(env *localenv.LocalEnvironment, packageName, portalURL string, fo
 	return nil
 }
 
-func pullApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL string, labels map[string]string, force bool) error {
-	log.Infof("Pulling app package %v from %v.", appPackage, portalURL)
+func pullApp(env *localenv.LocalEnvironment, appPackage loc.Locator, source string, labels map[string]string, force bool) error {
+	log.Infof("Pulling app package %v from %v.", appPackage, source)
 
-	remoteApps, err := env.AppService(portalURL, localenv.AppConfig{})
+	remoteApps, closer, err := env.AppServiceFromURL(source, localenv.AppConfig{})
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer closer()
 
 	remoteApp, err := remoteApps.GetApp(appPackage)
 	if err != nil {
@@ -335,10 +336,11 @@ func pullApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL s
 		return trace.Wrap(err)
 	}
 
-	remotePackages, err := env.PackageService(portalURL)
+	remotePackages, closer, err := env.PackageServiceFromURL(source)
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer closer()
 
 	puller := appservice.Puller{
 		SrcPack:  remotePackages,
@@ -354,12 +356,12 @@ func pullApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL s
 		return trace.Wrap(err)
 	}
 
-	env.Printf("%v pulled from %v\n", remoteApp, portalURL)
+	env.Printf("%v pulled from %v\n", remoteApp, source)
 	return nil
 }
 
-func pushApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL string) error {
-	log.Infof("pushing app package %v to %v", appPackage, portalURL)
+func pushApp(env *localenv.LocalEnvironment, appPackage loc.Locator, destination string) error {
+	log.Infof("Pushing app package %v to %v.", appPackage, destination)
 
 	localApps, err := env.AppServiceLocal(localenv.AppConfig{})
 	if err != nil {
@@ -371,12 +373,13 @@ func pushApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL s
 		return trace.Wrap(err)
 	}
 
-	remoteApps, err := env.AppService(portalURL, localenv.AppConfig{})
+	remoteApps, closer, err := env.AppServiceFromURL(destination, localenv.AppConfig{})
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer closer()
 
-	remotePackages, err := env.PackageService(portalURL)
+	remotePackages, err := env.PackageService(destination)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -393,7 +396,7 @@ func pushApp(env *localenv.LocalEnvironment, appPackage loc.Locator, portalURL s
 		return trace.Wrap(err)
 	}
 
-	env.Printf("%v pushed to %v\n", localApp, portalURL)
+	env.Printf("%v pushed to %v\n", localApp, destination)
 	return nil
 }
 

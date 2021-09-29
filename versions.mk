@@ -4,6 +4,7 @@ TELEPORT_TAG ?= 3.2.17
 ETCD_VER ?= 2.3.7
 # abbreviated gravity version to use as a build ID
 GRAVITY_VERSION ?= $(shell ./version.sh)
+UPGRADE_VIA_VERSION ?= 8.0.0-beta.4.1
 # current Kubernetes version
 K8S_VER ?= 1.21.5
 # Kubernetes version suffix for the planet package, constructed by concatenating

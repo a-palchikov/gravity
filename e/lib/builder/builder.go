@@ -23,7 +23,6 @@ import (
 	"github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/builder"
 	"github.com/gravitational/gravity/lib/defaults"
-	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/storage"
 
@@ -144,37 +143,3 @@ func (g *generator) configureExtensions(manifest schema.Manifest, req *app.Insta
 	}
 }
 
-// NewSyncer returns a new syncer instance for the provided builder
-func NewSyncer(b *builder.Engine) (builder.Syncer, error) {
-	repository, err := b.GetRepository(b)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	pack, err := b.Env.PackageService(repository)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	apps, err := b.Env.AppService(repository, localenv.AppConfig{})
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return builder.NewPackSyncer(pack, apps, repository), nil
-}
-
-// GetRepository returns package source repository for the provided builder
-func GetRepository(b *builder.Engine) (string, error) {
-	// use repository set explicitly on the CLI (via --repository flag)
-	if b.Repository != "" {
-		return b.Repository, nil
-	}
-	// if it wasn't set, look for an cluster we're logged into
-	credentials, err := b.CredentialsService.Current()
-	if err != nil && !trace.IsNotFound(err) {
-		return "", trace.Wrap(err)
-	}
-	// otherwise use the default one
-	if trace.IsNotFound(err) {
-		return defaults.DistributionOpsCenter, nil
-	}
-	return credentials.URL, nil
-}

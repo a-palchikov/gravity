@@ -53,7 +53,7 @@ func (env *LocalEnvironment) NewClusterEnvironment(opts ...ClusterEnvironmentOpt
 	ctx, cancel := context.WithTimeout(context.TODO(), defaults.AuditLogClientTimeout)
 	defer cancel()
 	auditLog, err := env.AuditLog(ctx)
-	if err != nil && !trace.IsNotFound(err) {
+	if err != nil && !trace.IsNotFound(err) && !trace.IsAccessDenied(err) {
 		log.WithError(err).Warn("Failed to create audit log.")
 	}
 	user, err := env.Backend.GetServiceUser()
@@ -104,7 +104,7 @@ type ClusterEnvironment struct {
 // NewClusterEnvironment initializes local cluster services and
 // returns a new instance of cluster environment.
 // The resulting environment will not have a kubernetes client
-func NewClusterEnvironment() (*ClusterEnvironment, error) {
+func NewClusterEnvironment() (clusterEnv *ClusterEnvironment, err error) {
 	stateDir, err := LocalGravityDir()
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -113,6 +113,11 @@ func NewClusterEnvironment() (*ClusterEnvironment, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	defer func() {
+		if err != nil {
+			env.Close()
+		}
+	}()
 	user, err := env.Backend.GetServiceUser()
 	if err != nil && !trace.IsNotFound(err) {
 		return nil, trace.Wrap(err)
@@ -146,6 +151,20 @@ func WithClient(client *kubernetes.Clientset) ClusterEnvironmentOption {
 func WithEtcdTimeout(timeout time.Duration) ClusterEnvironmentOption {
 	return func(config *clusterEnvironmentConfig) {
 		config.etcdTimeout = timeout
+	}
+}
+
+// WithNodeAddr is an option to override this node address
+func WithNodeAddr(addr string) ClusterEnvironmentOption {
+	return func(config *clusterEnvironmentConfig) {
+		config.nodeAddr = addr
+	}
+}
+
+// WithServiceUser is an option to override the service user
+func WithServiceUser(serviceUser systeminfo.User) ClusterEnvironmentOption {
+	return func(config *clusterEnvironmentConfig) {
+		config.serviceUser = &serviceUser
 	}
 }
 

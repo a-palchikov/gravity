@@ -17,7 +17,7 @@ limitations under the License.
 package builder
 
 import (
-	"github.com/gravitational/gravity/lib/app"
+	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/schema"
 )
 
@@ -25,14 +25,14 @@ import (
 type Generator interface {
 	// NewInstallerRequest returns a new request to generate an installer
 	// for the specified application
-	NewInstallerRequest(*Engine, schema.Manifest, app.Application) (*app.InstallerRequest, error)
+	NewInstallerRequest(*Engine, schema.Manifest, libapp.Application) (*libapp.InstallerRequest, error)
 }
 
 type generator struct{}
 
 // NewInstallerRequest returns a request to build an installer for the specified application
-func (g *generator) NewInstallerRequest(engine *Engine, _ schema.Manifest, application app.Application) (*app.InstallerRequest, error) {
-	return &app.InstallerRequest{
-		Application: application.Package,
+func (g *generator) NewInstallerRequest(engine *Engine, _ schema.Manifest, app libapp.Application) (*libapp.InstallerRequest, error) {
+	return &libapp.InstallerRequest{
+		Application: app.Package,
 	}, nil
 }

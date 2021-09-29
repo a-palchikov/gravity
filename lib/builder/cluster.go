@@ -25,7 +25,6 @@ import (
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/schema"
-
 	"github.com/gravitational/trace"
 )
 
@@ -56,13 +55,11 @@ type ClusterRequest struct {
 	Vendor service.VendorRequest
 	// BaseImage is optional base image provided on the command line.
 	BaseImage string
-	// UpgradeVia lists intermediate runtime versions to embed inside the installer
-	UpgradeVia []string
 }
 
 // Build builds a cluster image according to the provided parameters.
 func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
-	imageSource, err := GetClusterImageSource(req.SourcePath)
+	imageSource, err := GetClusterImageSource(req.SourcePath, b.engine.Logger)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -98,7 +95,9 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = b.engine.SyncPackageCache(ctx, locator, *manifest, *runtimeVersion)
+	manifestWithRuntime := manifest.WithBase(loc.Runtime.WithVersion(*runtimeVersion))
+	app := app(locator, manifestWithRuntime)
+	err = b.engine.SyncPackageCache(ctx, app)
 	if err != nil {
 		return trace.Wrap(err)
 	}

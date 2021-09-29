@@ -24,7 +24,6 @@ else
 endif
 
 .PHONY: all
-# TODO(dima): add robotest target(s)
 all: $(BUILDER) tarball
 
 .PHONY: binaries
@@ -34,6 +33,10 @@ binaries: $(BUILDER)
 .PHONY: tarball
 tarball: $(BUILDER)
 	$(BUILDER) cluster:gravity
+
+.PHONY: intermediate-tarball
+intermediate-tarball: $(BUILDER)
+	$(BUILDER) cluster:gravityvia $(UPGRADE_VIA_VERSION)
 
 .PHONY: hub-tarball
 hub-tarball: $(BUILDER)
