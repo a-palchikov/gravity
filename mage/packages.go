@@ -79,6 +79,7 @@ var (
 		repository: "gravitational.io",
 		name:       "planet",
 		version:    planetVersion,
+		gitBranch:  planetVersion,
 		gitRepo:    "https://github.com/gravitational/planet",
 		env: map[string]string{
 			"PLANET_BUILD_TAG": planetVersion,
@@ -194,12 +195,13 @@ var (
 			pkgWebAssets.Locator(),
 			pkgRBAC.Locator(),
 			pkgDNSApp.Locator(),
-			pkgLoggingApp.Locator(),
-			pkgMonitoringApp.Locator(),
-			pkgIngressApp.Locator(),
-			pkgStorageApp.Locator(),
+			// TODO(dima): remove temporarily here as these have been turned off in the manifest
+			//pkgLoggingApp.Locator(),
+			//pkgMonitoringApp.Locator(),
+			//pkgIngressApp.Locator(),
+			//pkgStorageApp.Locator(),
 			pkgBandwagonApp.Locator(),
-			pkgTillerApp.Locator(),
+			//pkgTillerApp.Locator(),
 			pkgSiteApp.Locator(),
 		},
 		force: true,
@@ -219,9 +221,9 @@ func (Package) K8s(ctx context.Context) (err error) {
 	mg.CtxDeps(ctx, Mkdir(consistentStateDir()),
 		Build.Go, Package.Gravity, Package.Teleport,
 		Package.Fio, Package.Planet, Package.Web,
-		Package.Site, Package.Monitoring, Package.Logging,
-		Package.Ingress, Package.Storage, Package.Tiller,
-		Package.Rbac, Package.DNS, Package.Bandwagon)
+		// TODO(dima): remove temporarily here as these have been turned off in the manifest
+		// Package.Monitoring, Package.Logging, Package.Ingress, Package.Storage, Package.Tiller,
+		Package.Rbac, Package.DNS, Package.Bandwagon, Package.Site)
 
 	m := root.Target("package:k8s")
 	defer func() { m.Complete(err) }()
@@ -411,9 +413,10 @@ func (Package) Planet(ctx context.Context) (err error) {
 		return nil
 	}
 
+	labels := []string{"purpose", "runtime"}
 	if _, err := os.Stat(pkgPlanet.defaultCachePath()); !os.IsNotExist(err) {
 		m.SetCached(true)
-		return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.defaultCachePath()))
+		return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.defaultCachePath(), labels...))
 	}
 
 	err = pkgPlanet.BuildApp(ctx)
@@ -421,7 +424,7 @@ func (Package) Planet(ctx context.Context) (err error) {
 		return trace.Wrap(err)
 	}
 
-	return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.defaultCachePath()))
+	return trace.Wrap(pkgPlanet.ImportPackage(ctx, m, pkgPlanet.defaultCachePath(), labels...))
 }
 
 func (Package) Web(ctx context.Context) (err error) {
@@ -873,12 +876,21 @@ func (p gravityPackage) localAppImport(ctx context.Context, m *magnet.MagnetTarg
 	return trace.Wrap(err)
 }
 
-func (p gravityPackage) ImportPackage(ctx context.Context, m *magnet.MagnetTarget, path string) error {
+func (p gravityPackage) ImportPackage(ctx context.Context, m *magnet.MagnetTarget, path string, labelPairs ...string) error {
 	mg.Deps(Mkdir(consistentStateDir()))
 	// I'm not sure the gravity package store is really protected against concurrent access
 	// so until we're sure, have operations take a lock
 	sharedStateMutex.Lock()
 	defer sharedStateMutex.Unlock()
+
+	if len(labelPairs) != 0 && len(labelPairs)%2 != 0 {
+		return trace.BadParameter("invalid label set: %q", labelPairs)
+	}
+
+	var labels []string
+	for i := 0; i < len(labelPairs); i += 2 {
+		labels = append(labels, fmt.Sprint(labelPairs[i], ":", labelPairs[i+1]))
+	}
 
 	_, err := m.Exec().Run(
 		ctx,
@@ -892,13 +904,17 @@ func (p gravityPackage) ImportPackage(ctx context.Context, m *magnet.MagnetTarge
 		return trace.Wrap(err)
 	}
 
+	args := []string{
+		"--state-dir", consistentStateDir(),
+		"package", "import",
+	}
+	if len(labels) != 0 {
+		args = append(args, "--labels", strings.Join(labels, ","))
+	}
 	_, err = m.Exec().Run(
 		ctx,
 		consistentGravityBin(),
-		"--state-dir", consistentStateDir(),
-		"package", "import",
-		path,
-		p.Locator(),
+		append(args, path, p.Locator())...,
 	)
 	return trace.Wrap(err)
 }

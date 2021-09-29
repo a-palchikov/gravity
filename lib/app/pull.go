@@ -179,11 +179,26 @@ func (r Puller) pullPackageHandler(ctx context.Context, loc loc.Locator) func() 
 func (r Puller) pullPackageWithRetries(ctx context.Context, loc loc.Locator) error {
 	ctx, cancel := context.WithTimeout(ctx, defaults.TransientErrorTimeout)
 	defer cancel()
-	return utils.RetryTransient(ctx,
-		backoff.NewConstantBackOff(defaults.RetryInterval),
-		func() (err error) {
-			return r.pullPackage(loc)
-		})
+
+	return utils.RetryWithInterval(ctx, backoff.NewConstantBackOff(defaults.RetryInterval), func() error {
+		err := r.pullPackage(loc)
+		if err == nil {
+			return nil
+		}
+		switch {
+		case utils.IsTransientClusterError(err):
+			// Retry on transient errors
+			return trace.Wrap(err)
+		case trace.IsNotFound(err):
+			// Retry for not found packages as it might take some time
+			// for a package to get replicated.
+			// TODO(dima): make this only a case when source package store
+			// is a replicated one
+			return trace.Wrap(err)
+		default:
+			return &backoff.PermanentError{Err: err}
+		}
+	})
 }
 
 func (r Puller) pullPackage(loc loc.Locator) error {

@@ -20,6 +20,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"github.com/gravitational/magnet"
 	"github.com/gravitational/trace"
 	"github.com/magefile/mage/mg"
 )
@@ -34,17 +35,46 @@ func (Cluster) Gravity(ctx context.Context) (err error) {
 	m := root.Target("cluster:gravity")
 	defer func() { m.Complete(err) }()
 
-	_, err = m.Exec().SetEnv("GRAVITY_K8S_VERSION", k8sVersion).Run(context.TODO(),
-		filepath.Join(consistentBinDir(), "tele"),
+	return buildGravityClusterImage(ctx, m, "")
+}
+
+// GravityVia builds the reference gravity cluster image with an intermediate
+// upgrade step for version given with upgradeVia
+func (Cluster) GravityVia(ctx context.Context, upgradeVia string) (err error) {
+	mg.CtxDeps(ctx, Mkdir(consistentStateDir()), Mkdir(consistentBinDir()),
+		Build.Go, Package.Telekube)
+
+	m := root.Target("cluster:gravity-via")
+	defer func() { m.Complete(err) }()
+
+	if err := importIntermediatePackages(ctx, m, upgradeVia); err != nil {
+		return trace.Wrap(err)
+	}
+
+	return buildGravityClusterImage(ctx, m, upgradeVia)
+}
+
+func importIntermediatePackages(ctx context.Context, t *magnet.MagnetTarget, upgradeVia string) (err error) {
+	_, err = t.Exec().Run(ctx, "hack/import-upgrade-via", upgradeVia, buildVersion)
+	return trace.Wrap(err)
+}
+
+func buildGravityClusterImage(ctx context.Context, t *magnet.MagnetTarget, upgradeVia string) (err error) {
+	args := []string{
 		"--debug",
 		"build",
 		"assets/telekube/resources/app.yaml",
-		"-f",
+		"--overwrite",
 		"--version", buildVersion,
 		"--state-dir", consistentStateDir(),
 		"--skip-version-check",
-		"-o", filepath.Join(consistentBuildDir(), "gravity.tar"),
-	)
+		"--output", filepath.Join(consistentBuildDir(), "gravity.tar"),
+	}
+	if upgradeVia != "" {
+		args = append(args, "--upgrade-via", upgradeVia)
+	}
+	_, err = t.Exec().SetEnv("GRAVITY_K8S_VERSION", k8sVersion).Run(ctx,
+		filepath.Join(consistentBinDir(), "tele"), args...)
 	return trace.Wrap(err)
 }
 
