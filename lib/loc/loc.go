@@ -218,6 +218,15 @@ func MustParseLocator(v string) Locator {
 	return *l
 }
 
+// MustSemVer returns the specified version if err is nil,
+// panic with the correspoding error message otherwise.
+func MustSemVer(version *semver.Version, err error) semver.Version {
+	if err != nil {
+		panic(err.Error())
+	}
+	return *version
+}
+
 // Deduplicate returns ls with duplicates removed
 func Deduplicate(ls []Locator) (result []Locator) {
 	if len(ls) == 0 {

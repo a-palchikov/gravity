@@ -33,7 +33,7 @@ import (
 
 // TestServices contains a set of services that are used in tests
 type TestServices struct {
-	appservice.TestServices
+	*appservice.TestServices
 	// Agents is the RPC agents service
 	Agents *AgentService
 	// AgentServer is the RPC agent server
@@ -50,13 +50,22 @@ type TestServices struct {
 
 // SetupTestServices initializes backend and package and application services
 // that can be used in tests
-func SetupTestServices(c *check.C) TestServices {
-	dir := c.MkDir()
-
-	testServices := appservice.NewTestServices(dir, c)
+func SetupTestServices(c *check.C, opts ...TestServiceOption) TestServices {
+	t := testServices{
+		clock: clockwork.NewFakeClock(),
+	}
+	for _, opt := range opts {
+		opt(&t)
+	}
+	if t.stateDir == "" {
+		t.stateDir = c.MkDir()
+	}
+	if t.testServices == nil {
+		t.testServices = appservice.NewTestServices(c, appservice.WithDir(t.stateDir), appservice.WithClock(t.clock))
+	}
 
 	usersService, err := usersservice.New(usersservice.Config{
-		Backend: testServices.Backend,
+		Backend: t.testServices.Backend,
 	})
 	c.Assert(err, check.IsNil)
 
@@ -65,7 +74,7 @@ func SetupTestServices(c *check.C) TestServices {
 
 	proxy := &suite.TestProxy{}
 	log := log.WithField("from", "test")
-	peerStore := NewAgentPeerStore(testServices.Backend, usersService, proxy, log)
+	peerStore := NewAgentPeerStore(t.testServices.Backend, usersService, proxy, log)
 	agentServer, err := rpcserver.New(rpcserver.Config{
 		FieldLogger: log,
 		Listener:    listener,
@@ -80,26 +89,55 @@ func SetupTestServices(c *check.C) TestServices {
 		log)
 
 	opsService, err := New(Config{
-		StateDir:      dir,
-		Backend:       testServices.Backend,
+		StateDir:      t.stateDir,
+		Backend:       t.testServices.Backend,
 		Agents:        agentService,
-		Packages:      testServices.Packages,
+		Packages:      t.testServices.Packages,
 		TeleportProxy: proxy,
 		AuthClient:    &auth.Client{},
 		Proxy:         &suite.TestOpsProxy{},
 		Users:         usersService,
-		Apps:          testServices.Apps,
+		Apps:          t.testServices.Apps,
 		ProcessID:     "p1",
 	})
 	c.Assert(err, check.IsNil)
 
 	return TestServices{
-		TestServices: testServices,
+		TestServices: t.testServices,
 		Agents:       agentService,
 		AgentServer:  agentServer,
 		Operator:     opsService,
 		Users:        usersService,
-		Dir:          dir,
-		Clock:        clockwork.NewFakeClock(),
+		Dir:          t.stateDir,
+		Clock:        t.clock,
 	}
+}
+
+type testServices struct {
+	testServices *appservice.TestServices
+	stateDir     string
+	clock        clockwork.FakeClock
+}
+
+// TestServiceOption is a functional option to configure test services
+type TestServiceOption func(*testServices)
+
+// WithDir sets the state directory to dir
+func WithDir(dir string) TestServiceOption {
+	return func(t *testServices) {
+		t.stateDir = dir
+	}
+}
+
+// WithTestServices sets the application test services to ts
+func WithTestServices(ts *appservice.TestServices) TestServiceOption {
+	return func(t *testServices) {
+		t.testServices = ts
+	}
+}
+
+// Close releases the internal resources.
+// Implements io.Closer
+func (r *TestServices) Close() error {
+	return r.TestServices.Close()
 }

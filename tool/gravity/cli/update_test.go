@@ -17,21 +17,15 @@ limitations under the License.
 package cli
 
 import (
-	"path/filepath"
-	"testing"
-
+	appservice "github.com/gravitational/gravity/lib/app/service"
 	apptest "github.com/gravitational/gravity/lib/app/service/test"
-	"github.com/gravitational/gravity/lib/blob/fs"
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/ops/opsservice"
-	"github.com/gravitational/gravity/lib/storage/keyval"
 
 	"gopkg.in/check.v1"
 )
-
-func TestCLI(t *testing.T) { check.TestingT(t) }
 
 type S struct{}
 
@@ -62,8 +56,7 @@ func (s *S) TestGetsUpdatePackageByPattern(c *check.C) {
 }
 
 func (s *S) TestGetsUpdatePackageFromTarballEnviron(c *check.C) {
-	stateDir := c.MkDir()
-	createTarballEnviron(stateDir, c)
+	stateDir := createTarballEnviron(c)
 	args := localenv.TarballEnvironmentArgs{
 		StateDir: stateDir,
 	}
@@ -77,15 +70,18 @@ func (s *S) TestGetsUpdatePackageFromTarballEnviron(c *check.C) {
 	c.Assert(*loc, check.DeepEquals, clusterApp.WithLiteralVersion("2.0.1"))
 }
 
-func createTarballEnviron(stateDir string, c *check.C) {
-	backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(stateDir, defaults.GravityDBFile)})
-	c.Assert(err, check.IsNil)
-	objects, err := fs.New(filepath.Join(stateDir, defaults.PackagesDir))
-	c.Assert(err, check.IsNil)
-	services := opsservice.SetupTestServicesInDirectory(stateDir, backend, objects, c)
-	apptest.CreateRuntimeApplication(services.Apps, c)
-	apptest.CreateDummyApplication(clusterAppUpdate, c, services.Apps)
-	backend.Close()
+func createTarballEnviron(c *check.C) (stateDir string) {
+	dir := c.MkDir()
+	testServices := appservice.NewTestServices(c, appservice.WithDir(dir), appservice.WithDBFile(defaults.GravityDBFile))
+	services := opsservice.SetupTestServices(c, opsservice.WithDir(dir), opsservice.WithTestServices(testServices))
+	apptest.CreateApplication(apptest.AppRequest{
+		App:      apptest.DefaultClusterApplication(clusterAppUpdate).Build(),
+		Apps:     services.Apps,
+		Packages: services.Packages,
+	}, c)
+	// Close the resources (incl. backend) to release the database file for reading
+	services.Close()
+	return dir
 }
 
 var (

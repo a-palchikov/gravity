@@ -17,7 +17,6 @@ package service
 
 import (
 	"path/filepath"
-	"time"
 
 	"github.com/gravitational/gravity/lib/blob/fs"
 	"github.com/gravitational/gravity/lib/defaults"
@@ -26,6 +25,7 @@ import (
 	"github.com/gravitational/gravity/lib/pack/localpack"
 	"github.com/gravitational/gravity/lib/storage"
 	"github.com/gravitational/gravity/lib/storage/keyval"
+	"github.com/jonboulle/clockwork"
 
 	"github.com/mailgun/timetools"
 	"gopkg.in/check.v1"
@@ -39,21 +39,32 @@ type TestServices struct {
 }
 
 // NewTestServices creates a new set of test services
-func NewTestServices(dir string, c *check.C) TestServices {
+func NewTestServices(c *check.C, opts ...TestServiceOption) *TestServices {
+	t := testServices{
+		dbfile: "bolt.db",
+		clock:  clockwork.NewFakeClock(),
+	}
+	for _, opt := range opts {
+		opt(&t)
+	}
+	if t.stateDir == "" {
+		t.stateDir = c.MkDir()
+	}
+
 	backend, err := keyval.NewBolt(keyval.BoltConfig{
-		Path: filepath.Join(dir, "bolt.db"),
+		Path: filepath.Join(t.stateDir, t.dbfile),
 	})
 	c.Assert(err, check.IsNil)
 
-	objects, err := fs.New(dir)
+	objects, err := fs.New(t.stateDir)
 	c.Assert(err, check.IsNil)
 
 	packages, err := localpack.New(localpack.Config{
 		Backend:     backend,
-		UnpackedDir: filepath.Join(dir, defaults.UnpackedDir),
+		UnpackedDir: filepath.Join(t.stateDir, defaults.UnpackedDir),
 		Objects:     objects,
 		Clock: &timetools.FreezedTime{
-			CurrentTime: time.Date(2015, 11, 16, 1, 2, 3, 0, time.UTC),
+			CurrentTime: t.clock.Now(),
 		},
 		DownloadURL: "https://ops.example.com",
 	})
@@ -67,15 +78,49 @@ func NewTestServices(dir string, c *check.C) TestServices {
 
 	apps, err := New(Config{
 		Backend:  backend,
-		StateDir: filepath.Join(dir, defaults.ImportDir),
+		StateDir: filepath.Join(t.stateDir, defaults.ImportDir),
 		Packages: packages,
 		Charts:   charts,
 	})
 	c.Assert(err, check.IsNil)
 
-	return TestServices{
+	return &TestServices{
 		Backend:  backend,
 		Packages: packages,
 		Apps:     apps,
 	}
+}
+
+type testServices struct {
+	stateDir string
+	dbfile   string
+	clock    clockwork.FakeClock
+}
+
+type TestServiceOption func(*testServices)
+
+func WithClock(clock clockwork.FakeClock) TestServiceOption {
+	return func(r *testServices) {
+		r.clock = clock
+	}
+}
+
+// WithDir sets the state directory to dir
+func WithDir(dir string) TestServiceOption {
+	return func(r *testServices) {
+		r.stateDir = dir
+	}
+}
+
+// WithDBFile sets the filename of the database file
+func WithDBFile(filename string) TestServiceOption {
+	return func(r *testServices) {
+		r.dbfile = filename
+	}
+}
+
+// Close releases the internal resources.
+// Implements io.Closer
+func (r *TestServices) Close() error {
+	return r.Backend.Close()
 }
