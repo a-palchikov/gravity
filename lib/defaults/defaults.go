@@ -486,6 +486,9 @@ const (
 	// PlanetShareDir is the in-planet share directory
 	PlanetShareDir = "/ext/share"
 
+	// PlanetEtcdDir is the etcd data directory as mounted inside planet
+	PlanetEtcdDir = "/ext/etcd"
+
 	// SharedDirMask is a mask for shared directories
 	SharedDirMask = 0755
 
@@ -1390,8 +1393,11 @@ var ServiceAddr = fmt.Sprintf("%%v.%%v%v", ServiceAddrSuffix)
 var BaseTaintsVersion = semver.Must(semver.NewVersion("4.36.0"))
 
 // BaseUpdateVersion sets the minimum version that this binary
-// can update
-var BaseUpdateVersion = semver.Must(semver.NewVersion("3.51.0"))
+// can update.
+// TODO(dima): remove this once upgrade-via has been merged.
+// It cannot be a known 7.x version since upgrading from that far back
+// without the upgrade-via support is not possible.
+var BaseUpdateVersion = semver.Must(semver.NewVersion("7.999.999"))
 
 // DockerRegistryAddr returns the address of docker registry running on server
 func DockerRegistryAddr(server string) string {
