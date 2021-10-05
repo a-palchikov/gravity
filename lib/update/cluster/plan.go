@@ -212,15 +212,9 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		return nil, trace.Wrap(err)
 	}
 
-	installedDeps, err := app.GetDirectApplicationDependencies(*installedApp)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	updateDeps, err := app.GetDirectApplicationDependencies(*updateApp)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	appUpdates, err := loc.GetUpdatedDependencies(installedDeps, updateDeps)
+	appUpdates, err := loc.GetUpdatedDependencies(
+		app.GetDirectApplicationDependencies(*installedApp),
+		app.GetDirectApplicationDependencies(*updateApp))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -549,16 +543,8 @@ func reorderServers(servers []storage.UpdateServer, server storage.Server) (resu
 }
 
 func runtimeUpdates(installedRuntime, updateRuntime, updateApp app.Application) ([]loc.Locator, error) {
-	installedDeps, err := app.GetDirectApplicationDependencies(installedRuntime)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	installedDeps = updateApp.Manifest.FilterDisabledDependencies(installedDeps)
-	updateDeps, err := app.GetDirectApplicationDependencies(updateRuntime)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	updateDeps = updateApp.Manifest.FilterDisabledDependencies(updateDeps)
+	installedDeps := updateApp.Manifest.FilterDisabledDependencies(app.GetDirectApplicationDependencies(installedRuntime))
+	updateDeps := updateApp.Manifest.FilterDisabledDependencies(app.GetDirectApplicationDependencies(updateRuntime))
 	runtimeUpdates, err := loc.GetUpdatedDependencies(installedDeps, updateDeps)
 	if err != nil && !trace.IsNotFound(err) {
 		return nil, trace.Wrap(err)

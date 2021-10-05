@@ -136,10 +136,6 @@ func DeleteAppHookJob(ctx context.Context, client *kubernetes.Clientset, req Del
 
 // GetDirectApplicationDependencies returns the direct application dependencies, without
 // base app resolution
-func GetDirectApplicationDependencies(app Application) (deps []loc.Locator, err error) {
-	manifest, err := schema.ParseManifestYAMLNoValidate(app.PackageEnvelope.Manifest)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	return append(manifest.Dependencies.GetApps(), app.Package), nil
+func GetDirectApplicationDependencies(app Application) (deps []loc.Locator) {
+	return append(app.Manifest.Dependencies.GetApps(), app.Package)
 }

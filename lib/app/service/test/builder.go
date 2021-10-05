@@ -156,6 +156,14 @@ func (r App) Locator() loc.Locator {
 // })
 func (r App) Build() App { return r }
 
+// App converts this value to the application package format
+func (r App) App() app.Application {
+	return app.Application{
+		Package:  r.Manifest.Locator(),
+		Manifest: r.Manifest,
+	}
+}
+
 // App describes a test application package
 type App struct {
 	// Manifest describes the application to create

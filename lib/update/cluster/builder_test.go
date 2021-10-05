@@ -17,16 +17,20 @@ limitations under the License.
 package cluster
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"sort"
 	"strconv"
 
 	"github.com/gravitational/gravity/lib/app"
+	apptest "github.com/gravitational/gravity/lib/app/service/test"
+	"github.com/gravitational/gravity/lib/archive"
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
+	"github.com/gravitational/gravity/lib/ops/opsservice"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/storage"
@@ -398,23 +402,30 @@ func (s *PlanSuite) TestPlanWithIntermediateRuntimeUpdate(c *check.C) {
 	}
 }
 
-// TODO(dima): test whether to upgrade etcd based on the constructed plan
 /*
 func (s *PlanSuite) TestUpdatesEtcdFromManifestWithoutLabels(c *check.C) {
 	services := opsservice.SetupTestServices(c)
-	runtimePackage := loc.MustParseLocator("example.com/runtime:1.0.0")
-	apptest.CreatePackage(apptest.PackageRequest{
-		Package: apptest.Package{
-			Loc: runtimePackage,
+	// defer services.Close()
+	runtimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:1.0.0")
+	runtimeAppLoc := loc.MustParseLocator("gravitational.io/base:1.0.0")
+	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimePackageLoc).
+		WithPackageDependencies(apptest.Package{
+			Loc: runtimePackageLoc,
 			Items: []*archive.Item{
 				archive.ItemFromString("orbit.manifest.json", `{"version": "0.0.1"}`),
-			}},
+			}}).
+		Build()
+	clusterAppLoc := loc.MustParseLocator("gravitational.io/app:1.0.0")
+	clusterApp := apptest.CreateApplication(apptest.AppRequest{
+		App:      apptest.ClusterApplication(clusterAppLoc, runtimeApp).Build(),
+		Apps:     services.Apps,
 		Packages: services.Packages,
 	}, c)
-	updateRuntimePackage := loc.MustParseLocator("example.com/runtime:1.0.1")
-	apptest.CreatePackage(apptest.PackageRequest{
-		Package: apptest.Package{
-			Loc: updateRuntimePackage,
+	updateRuntimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:2.0.0")
+	updateRuntimeAppLoc := loc.MustParseLocator("gravitational.io/base:2.0.0")
+	updateRuntimeApp := apptest.RuntimeApplication(updateRuntimeAppLoc, updateRuntimePackageLoc).
+		WithPackageDependencies(apptest.Package{
+			Loc: updateRuntimePackageLoc,
 			Items: []*archive.Item{
 				archive.ItemFromString("orbit.manifest.json", `{
 	"version": "0.0.1",
@@ -425,38 +436,40 @@ func (s *PlanSuite) TestUpdatesEtcdFromManifestWithoutLabels(c *check.C) {
 		}
 	]
 }`),
-			}},
+			}}).Build()
+	updateClusterAppLoc := loc.MustParseLocator("gravitational.io/app:2.0.0")
+	updateClusterApp := apptest.CreateApplication(apptest.AppRequest{
+		App:      apptest.ClusterApplication(updateClusterAppLoc, updateRuntimeApp).Build(),
+		Apps:     services.Apps,
 		Packages: services.Packages,
 	}, c)
+
 	b := phaseBuilder{
-		packages: services.Packages,
-		installedRuntimeApp: app.Application{Manifest: schema.Manifest{
-			SystemOptions: &schema.SystemOptions{
-				Dependencies: schema.SystemDependencies{
-					Runtime: &schema.Dependency{Locator: runtimePackage},
-				},
-			},
-		}},
-		updateRuntimeApp: app.Application{Manifest: schema.Manifest{
-			SystemOptions: &schema.SystemOptions{
-				Dependencies: schema.SystemDependencies{
-					Runtime: &schema.Dependency{Locator: updateRuntimePackage},
-				},
-			},
-		}},
+		packages:            services.Packages,
+		apps:                services.Apps,
+		installedRuntimeApp: runtimeApp.App(),
+		installedApp:        *clusterApp,
+		updateRuntimeApp:    updateRuntimeApp.App(),
+		updateApp:           *updateClusterApp,
 	}
-	version := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp)
-	c.Assert(version, check.DeepEquals, &etcdVersion{
-		update: "3.3.3",
-	})
+	err := b.initSteps(context.Background())
+	c.Assert(err, check.IsNil)
+	plan := b.newPlan()
+
+	bytes, err := json.Marshal(plan)
+	c.Assert(err, check.IsNil)
+	fmt.Println(string(bytes))
 }
+*/
 
 func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 	services := opsservice.SetupTestServices(c)
-	runtimePackage := loc.MustParseLocator("example.com/runtime:1.0.0")
-	apptest.CreatePackage(apptest.PackageRequest{
-		Package: apptest.Package{
-			Loc: runtimePackage,
+	// defer services.Close()
+	runtimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:1.0.0")
+	runtimeAppLoc := loc.MustParseLocator("gravitational.io/base:1.0.0")
+	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimePackageLoc).
+		WithPackageDependencies(apptest.Package{
+			Loc: runtimePackageLoc,
 			Items: []*archive.Item{
 				archive.ItemFromString("orbit.manifest.json", `{
 	"version": "0.0.1",
@@ -467,13 +480,19 @@ func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 		}
 	]
 }`),
-			}},
+			}}).
+		Build()
+	clusterAppLoc := loc.MustParseLocator("gravitational.io/app:1.0.0")
+	clusterApp := apptest.CreateApplication(apptest.AppRequest{
+		App:      apptest.ClusterApplication(clusterAppLoc, runtimeApp).Build(),
+		Apps:     services.Apps,
 		Packages: services.Packages,
 	}, c)
-	updateRuntimePackage := loc.MustParseLocator("example.com/runtime:1.0.1")
-	apptest.CreatePackage(apptest.PackageRequest{
-		Package: apptest.Package{
-			Loc: updateRuntimePackage,
+	updateRuntimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:2.0.0")
+	updateRuntimeAppLoc := loc.MustParseLocator("gravitational.io/base:2.0.0")
+	updateRuntimeApp := apptest.RuntimeApplication(updateRuntimeAppLoc, updateRuntimePackageLoc).
+		WithPackageDependencies(apptest.Package{
+			Loc: updateRuntimePackageLoc,
 			Items: []*archive.Item{
 				archive.ItemFromString("orbit.manifest.json", `{
 	"version": "0.0.1",
@@ -484,38 +503,51 @@ func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 		}
 	]
 }`),
-			}},
+			}}).Build()
+	updateClusterAppLoc := loc.MustParseLocator("gravitational.io/app:2.0.0")
+	updateClusterApp := apptest.CreateApplication(apptest.AppRequest{
+		App:      apptest.ClusterApplication(updateClusterAppLoc, updateRuntimeApp).Build(),
+		Apps:     services.Apps,
 		Packages: services.Packages,
 	}, c)
+
 	b := phaseBuilder{
-		packages: services.Packages,
-		installedRuntimeApp: app.Application{Manifest: schema.Manifest{
-			SystemOptions: &schema.SystemOptions{
-				Dependencies: schema.SystemDependencies{
-					Runtime: &schema.Dependency{Locator: runtimePackage},
-				},
-			},
-		}},
-		updateRuntimeApp: app.Application{Manifest: schema.Manifest{
-			SystemOptions: &schema.SystemOptions{
-				Dependencies: schema.SystemDependencies{
-					Runtime: &schema.Dependency{Locator: updateRuntimePackage},
-				},
-			},
-		}},
+		operator: testOperator,
+		planTemplate: storage.OperationPlan{
+			Servers: []storage.Server{{
+				AdvertiseIP: "192.168.0.1",
+				Hostname:    "node-1",
+				Role:        "node",
+				ClusterRole: string(schema.ServiceRoleMaster),
+			}},
+		},
+		packages:            services.Packages,
+		apps:                services.Apps,
+		installedRuntimeApp: runtimeApp.App(),
+		installedApp:        *clusterApp,
+		updateRuntimeApp:    updateRuntimeApp.App(),
+		updateApp:           *updateClusterApp,
+		installedTeleport:   loc.MustParseLocator("gravitational.io/teleport:1.0.0"),
+		updateTeleport:      loc.MustParseLocator("gravitational.io/teleport:2.0.0"),
 	}
-	version := shouldUpdateEtcd(b.installedRuntimeApp, b.updateRuntimeApp)
-	c.Assert(version, check.DeepEquals, &etcdVersion{
+	err := b.initSteps(context.Background())
+	c.Assert(err, check.IsNil)
+
+	c.Assert(b.targetStep.etcd, check.DeepEquals, &etcdVersion{
 		installed: "3.3.2",
 		update:    "3.3.3",
 	})
 }
-*/
 
 func newBuilder(c *check.C, params params) phaseBuilder {
 	builder := phaseBuilder{
-		operator:            testOperator,
-		operation:           operation,
+		operator: testOperator,
+		operation: storage.SiteOperation{
+			AccountID:  "000",
+			SiteDomain: "test",
+			ID:         "123",
+			Type:       ops.OperationUpdate,
+		},
 		installedRuntimeApp: params.installedRuntimeApp,
 		installedApp:        params.installedApp,
 		updateRuntimeApp:    params.updateRuntimeApp,
@@ -532,10 +564,10 @@ func newBuilder(c *check.C, params params) phaseBuilder {
 		constants.GravityPackage)
 	c.Assert(err, check.IsNil)
 	builder.planTemplate = storage.OperationPlan{
-		OperationID:        operation.ID,
-		OperationType:      operation.Type,
-		AccountID:          operation.AccountID,
-		ClusterName:        operation.SiteDomain,
+		OperationID:        builder.operation.ID,
+		OperationType:      builder.operation.Type,
+		AccountID:          builder.operation.AccountID,
+		ClusterName:        builder.operation.SiteDomain,
 		Servers:            params.servers,
 		GravityPackage:     *gravityPackage,
 		DNSConfig:          params.dnsConfig,
@@ -1399,13 +1431,6 @@ var intermediateRuntimePackage = storage.RuntimePackage{
 	},
 }
 var gravityInstalledLoc = loc.MustParseLocator("gravitational.io/gravity:1.0.0")
-
-var operation = storage.SiteOperation{
-	AccountID:  "000",
-	SiteDomain: "test",
-	ID:         "123",
-	Type:       ops.OperationUpdate,
-}
 
 const (
 	numParallelPhases  = 3
