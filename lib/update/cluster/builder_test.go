@@ -402,69 +402,9 @@ func (s *PlanSuite) TestPlanWithIntermediateRuntimeUpdate(c *check.C) {
 	}
 }
 
-/*
-func (s *PlanSuite) TestUpdatesEtcdFromManifestWithoutLabels(c *check.C) {
-	services := opsservice.SetupTestServices(c)
-	// defer services.Close()
-	runtimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:1.0.0")
-	runtimeAppLoc := loc.MustParseLocator("gravitational.io/base:1.0.0")
-	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimePackageLoc).
-		WithPackageDependencies(apptest.Package{
-			Loc: runtimePackageLoc,
-			Items: []*archive.Item{
-				archive.ItemFromString("orbit.manifest.json", `{"version": "0.0.1"}`),
-			}}).
-		Build()
-	clusterAppLoc := loc.MustParseLocator("gravitational.io/app:1.0.0")
-	clusterApp := apptest.CreateApplication(apptest.AppRequest{
-		App:      apptest.ClusterApplication(clusterAppLoc, runtimeApp).Build(),
-		Apps:     services.Apps,
-		Packages: services.Packages,
-	}, c)
-	updateRuntimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:2.0.0")
-	updateRuntimeAppLoc := loc.MustParseLocator("gravitational.io/base:2.0.0")
-	updateRuntimeApp := apptest.RuntimeApplication(updateRuntimeAppLoc, updateRuntimePackageLoc).
-		WithPackageDependencies(apptest.Package{
-			Loc: updateRuntimePackageLoc,
-			Items: []*archive.Item{
-				archive.ItemFromString("orbit.manifest.json", `{
-	"version": "0.0.1",
-	"labels": [
-		{
-			"name": "version-etcd",
-			"value": "v3.3.3"
-		}
-	]
-}`),
-			}}).Build()
-	updateClusterAppLoc := loc.MustParseLocator("gravitational.io/app:2.0.0")
-	updateClusterApp := apptest.CreateApplication(apptest.AppRequest{
-		App:      apptest.ClusterApplication(updateClusterAppLoc, updateRuntimeApp).Build(),
-		Apps:     services.Apps,
-		Packages: services.Packages,
-	}, c)
-
-	b := phaseBuilder{
-		packages:            services.Packages,
-		apps:                services.Apps,
-		installedRuntimeApp: runtimeApp.App(),
-		installedApp:        *clusterApp,
-		updateRuntimeApp:    updateRuntimeApp.App(),
-		updateApp:           *updateClusterApp,
-	}
-	err := b.initSteps(context.Background())
-	c.Assert(err, check.IsNil)
-	plan := b.newPlan()
-
-	bytes, err := json.Marshal(plan)
-	c.Assert(err, check.IsNil)
-	fmt.Println(string(bytes))
-}
-*/
-
 func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 	services := opsservice.SetupTestServices(c)
-	// defer services.Close()
+	defer services.Close()
 	runtimePackageLoc := loc.MustParseLocator("gravitational.io/runtime:1.0.0")
 	runtimeAppLoc := loc.MustParseLocator("gravitational.io/base:1.0.0")
 	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimePackageLoc).
@@ -763,6 +703,16 @@ func (r *params) leaderMasterPhase(parent string, leadMaster storage.UpdateServe
 				Requires: []string{p("%v/elect")},
 			},
 			{
+				ID:          p("%v/taint"),
+				Executor:    taintNode,
+				Description: t("Taint node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &leadMaster.Server,
+					ExecServer: &leadMaster.Server,
+				},
+				Requires: []string{p("%v/health")},
+			},
+			{
 				ID:          p("%v/uncordon"),
 				Executor:    uncordonNode,
 				Description: t("Uncordon node %q"),
@@ -770,7 +720,17 @@ func (r *params) leaderMasterPhase(parent string, leadMaster storage.UpdateServe
 					Server:     &leadMaster.Server,
 					ExecServer: &leadMaster.Server,
 				},
-				Requires: []string{p("%v/health")},
+				Requires: []string{p("%v/taint")},
+			},
+			{
+				ID:          p("%v/untaint"),
+				Executor:    untaintNode,
+				Description: t("Remove taint from node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &leadMaster.Server,
+					ExecServer: &leadMaster.Server,
+				},
+				Requires: []string{p("%v/uncordon")},
 			},
 		},
 	}
@@ -834,6 +794,16 @@ func (r *params) otherMasterPhase(server storage.UpdateServer, parent string, le
 				Requires: []string{p("%v/elect")},
 			},
 			{
+				ID:          p("%v/taint"),
+				Executor:    taintNode,
+				Description: t("Taint node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &server.Server,
+					ExecServer: &leadMaster,
+				},
+				Requires: []string{p("%v/health")},
+			},
+			{
 				ID:          p("%v/uncordon"),
 				Executor:    uncordonNode,
 				Description: t("Uncordon node %q"),
@@ -841,7 +811,7 @@ func (r *params) otherMasterPhase(server storage.UpdateServer, parent string, le
 					Server:     &server.Server,
 					ExecServer: &leadMaster,
 				},
-				Requires: []string{p("%v/health")},
+				Requires: []string{p("%v/taint")},
 			},
 			{
 				ID:          p("%v/endpoints"),
@@ -852,6 +822,16 @@ func (r *params) otherMasterPhase(server storage.UpdateServer, parent string, le
 					ExecServer: &leadMaster,
 				},
 				Requires: []string{p("%v/uncordon")},
+			},
+			{
+				ID:          p("%v/untaint"),
+				Executor:    untaintNode,
+				Description: t("Remove taint from node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &server.Server,
+					ExecServer: &leadMaster,
+				},
+				Requires: []string{p("%v/endpoints")},
 			},
 		},
 	}
@@ -913,6 +893,16 @@ func (r *params) nodePhase(server storage.UpdateServer, leadMaster storage.Serve
 				Requires: []string{p("%v/system-upgrade")},
 			},
 			{
+				ID:          p("%v/taint"),
+				Executor:    taintNode,
+				Description: t("Taint node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &server.Server,
+					ExecServer: &leadMaster,
+				},
+				Requires: []string{p("%v/health")},
+			},
+			{
 				ID:          p("%v/uncordon"),
 				Executor:    uncordonNode,
 				Description: t("Uncordon node %q"),
@@ -920,7 +910,7 @@ func (r *params) nodePhase(server storage.UpdateServer, leadMaster storage.Serve
 					Server:     &server.Server,
 					ExecServer: &leadMaster,
 				},
-				Requires: []string{p("%v/health")},
+				Requires: []string{p("%v/taint")},
 			},
 			{
 				ID:          p("%v/endpoints"),
@@ -931,6 +921,16 @@ func (r *params) nodePhase(server storage.UpdateServer, leadMaster storage.Serve
 					ExecServer: &leadMaster,
 				},
 				Requires: []string{p("%v/uncordon")},
+			},
+			{
+				ID:          p("%v/untaint"),
+				Executor:    untaintNode,
+				Description: t("Remove taint from node %q"),
+				Data: &storage.OperationPhaseData{
+					Server:     &server.Server,
+					ExecServer: &leadMaster,
+				},
+				Requires: []string{p("%v/endpoints")},
 			},
 		},
 	}

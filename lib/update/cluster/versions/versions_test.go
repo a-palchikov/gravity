@@ -18,18 +18,11 @@ package versions
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 
-	"github.com/gravitational/gravity/lib/blob/fs"
-	"github.com/gravitational/gravity/lib/defaults"
+	apptest "github.com/gravitational/gravity/lib/app/service/test"
 	"github.com/gravitational/gravity/lib/loc"
-	"github.com/gravitational/gravity/lib/pack"
-	"github.com/gravitational/gravity/lib/pack/localpack"
-	"github.com/gravitational/gravity/lib/storage/keyval"
-	"github.com/mailgun/timetools"
+	"github.com/gravitational/gravity/lib/schema"
 
 	"github.com/coreos/go-semver/semver"
 	"gopkg.in/check.v1"
@@ -38,70 +31,76 @@ import (
 func Test(t *testing.T) { check.TestingT(t) }
 
 type Suite struct {
-	packages pack.PackageService
+	m schema.Manifest
 }
 
 var _ = check.Suite(&Suite{})
 
 func (s *Suite) SetUpTest(c *check.C) {
-	dir := c.MkDir()
-	s.packages = newPackageService(dir, c)
-	// Create an intermediate runtime package.
-	err := s.packages.UpsertRepository(defaults.SystemAccountOrg, time.Time{})
-	c.Assert(err, check.IsNil)
-	_, err = s.packages.CreatePackage(
-		loc.Runtime.WithLiteralVersion("2.0.15"),
-		strings.NewReader(""),
-		pack.WithLabels(pack.RuntimeUpgradeLabels("2.0.15")))
-	c.Assert(err, check.IsNil)
+	clusterApp := apptest.DefaultClusterApplication(loc.MustParseLocator("gravitational.io/app:1.0.0")).Build()
+	clusterApp.Manifest.SystemOptions.Dependencies.IntermediateVersions = []schema.IntermediateVersion{{
+		Version: newVer("2.0.15"),
+		Dependencies: schema.Dependencies{
+			Apps: []schema.Dependency{{
+				Locator: loc.Runtime.WithLiteralVersion("2.0.15"),
+			}},
+		},
+	}}
+	s.m = clusterApp.Manifest
 }
 
 func (s *Suite) TestVersions(c *check.C) {
 	upgradeRuntime := semver.New("3.0.5")
 	tests := []struct {
-		from    *semver.Version
+		from    semver.Version
 		error   string
 		comment string
 	}{
 		{
-			from:    semver.New("2.0.5"),
+			from:    newVer("2.0.5"),
 			comment: "Direct upgrade from previous major version",
 		},
 		{
-			from:    semver.New("3.0.1"),
+			from:    newVer("3.0.1"),
 			comment: "Direct upgrade from same major version",
 		},
 		{
-			from:    semver.New("1.0.0"),
+			from:    newVer("1.0.0"),
 			comment: "Upgrade via intermediate runtime",
 		},
 		{
-			from:    semver.New("1.1.0"),
-			error:   fmt.Sprintf(needsIntermediateErrorTpl, "1.1.0", upgradeRuntime, Versions{semver.New("2.1.0")}),
+			from:    newVer("1.1.0"),
+			error:   fmt.Sprintf(needsIntermediateErrorTpl, "1.1.0", upgradeRuntime, Versions{newVer("2.1.0")}),
 			comment: "No required intermediate runtime",
 		},
 		{
-			from:    semver.New("3.0.7"),
+			from:    newVer("3.0.7"),
 			error:   fmt.Sprintf(downgradeErrorTpl, "3.0.7", upgradeRuntime),
 			comment: "Downgrade from greater runtime version",
 		},
 		{
-			from:    semver.New("3.0.5"),
+			from:    newVer("3.0.5"),
 			comment: "Unchanged runtime version",
 		},
 		{
-			from:    semver.New("0.0.1"),
+			from:    newVer("0.0.1"),
 			error:   fmt.Sprintf(unsupportedErrorTpl, "0.0.1", upgradeRuntime),
 			comment: "Unsupported upgrade path",
 		},
 	}
 	for _, test := range tests {
 		err := RuntimeUpgradePath{
-			From:                  test.from,
-			To:                    upgradeRuntime,
-			directUpgradeVersions: directUpgradeVersions,
-			upgradeViaVersions:    upgradeViaVersions,
-		}.Verify(s.packages)
+			From: &test.from,
+			To:   upgradeRuntime,
+			directUpgradeVersions: Versions{
+				newVer("2.0.0"),
+				newVer("3.0.0"),
+			},
+			upgradeViaVersions: map[semver.Version]Versions{
+				newVer("1.0.0"): {newVer("2.0.10")},
+				newVer("1.1.0"): {newVer("2.1.0")},
+			},
+		}.Verify(s.m)
 		if test.error != "" {
 			c.Assert(err, check.ErrorMatches, test.error, check.Commentf(test.comment))
 		} else {
@@ -123,8 +122,8 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 				From: semver.New("6.1.30"),
 				To:   upgradeRuntime,
 				directUpgradeVersions: Versions{
-					semver.New("6.1.0"),
-					semver.New("7.0.0"),
+					newVer("6.1.0"),
+					newVer("7.0.0"),
 				},
 			},
 			direct:  true,
@@ -135,8 +134,8 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 				From: semver.New("5.0.0"),
 				To:   upgradeRuntime,
 				directUpgradeVersions: Versions{
-					semver.New("6.1.0"),
-					semver.New("7.0.0"),
+					newVer("6.1.0"),
+					newVer("7.0.0"),
 				},
 			},
 			direct:  false,
@@ -147,16 +146,16 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 				From: semver.New("5.5.38"),
 				To:   upgradeRuntime,
 				directUpgradeVersions: Versions{
-					semver.New("6.1.0"),
-					semver.New("7.0.0"),
+					newVer("6.1.0"),
+					newVer("7.0.0"),
 				},
-				upgradeViaVersions: map[*semver.Version]Versions{
-					semver.New("5.5.0"): {semver.New("6.1.0")},
+				upgradeViaVersions: map[semver.Version]Versions{
+					newVer("5.5.0"): {newVer("6.1.0")},
 				},
 			},
 			direct: false,
 			via: Versions{
-				semver.New("6.1.0"),
+				newVer("6.1.0"),
 			},
 			comment: "Upgrade via an intermediate runtime",
 		},
@@ -170,31 +169,6 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 	}
 }
 
-func newPackageService(dir string, c *check.C) *localpack.PackageServer {
-	backend, err := keyval.NewBolt(keyval.BoltConfig{Path: filepath.Join(dir, "bolt.db")})
-	c.Assert(err, check.IsNil)
-	objects, err := fs.New(dir)
-	c.Assert(err, check.IsNil)
-	pack, err := localpack.New(localpack.Config{
-		Backend:     backend,
-		UnpackedDir: filepath.Join(dir, defaults.UnpackedDir),
-		Objects:     objects,
-		Clock: &timetools.FreezedTime{
-			CurrentTime: time.Date(2015, 11, 16, 1, 2, 3, 0, time.UTC),
-		},
-		DownloadURL: "https://ops.example.com",
-	})
-	c.Assert(err, check.IsNil)
-	return pack
+func newVer(v string) semver.Version {
+	return *semver.New(v)
 }
-
-var (
-	directUpgradeVersions = Versions{
-		semver.New("2.0.0"),
-		semver.New("3.0.0"),
-	}
-	upgradeViaVersions = map[*semver.Version]Versions{
-		semver.New("1.0.0"): {semver.New("2.0.10")},
-		semver.New("1.1.0"): {semver.New("2.1.0")},
-	}
-)

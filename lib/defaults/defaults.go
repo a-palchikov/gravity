@@ -1388,13 +1388,9 @@ var ContainerImage = fmt.Sprintf("quay.io/%v", HookContainerNameTag)
 // ServiceAddr is the template for a Kubernetes service address
 var ServiceAddr = fmt.Sprintf("%%v.%%v%v", ServiceAddrSuffix)
 
-// BaseTaintsVersion sets the minimum version with support
-// for node taints and tolerations in system applications
-var BaseTaintsVersion = semver.Must(semver.NewVersion("4.36.0"))
-
 // BaseUpdateVersion sets the minimum version that this binary
 // can update.
-// TODO(dima): remove this once upgrade-via has been merged.
+// TODO(dima): remove this once upgrade-via support has been fully merged.
 // It cannot be a known 7.x version since upgrading from that far back
 // without the upgrade-via support is not possible.
 var BaseUpdateVersion = semver.Must(semver.NewVersion("7.999.999"))

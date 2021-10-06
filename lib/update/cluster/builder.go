@@ -24,7 +24,6 @@ import (
 
 	"github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/clients"
-	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
@@ -288,12 +287,7 @@ func getEtcdVersionFromManifest(m schema.Manifest, packages pack.PackageService)
 	return version, nil
 }
 
-// supportsTaints determines whether the specified runtime version supports node taints
-func supportsTaints(runtimeAppVersion semver.Version) (supports bool) {
-	return defaults.BaseTaintsVersion.Compare(runtimeAppVersion) <= 0
-}
-
-func shouldUpdateEtcd(installedVersion, updateVersion semver.Version) *etcdVersion {
+func getEtcdUpgradePath(installedVersion, updateVersion semver.Version) *etcdVersion {
 	if installedVersion.Compare(updateVersion) >= 0 {
 		return nil
 	}

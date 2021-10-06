@@ -29,7 +29,6 @@ import (
 	"github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
-	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/storage"
 	libupdate "github.com/gravitational/gravity/lib/update"
@@ -84,7 +83,7 @@ func (r *phaseBuilder) initSteps(ctx context.Context) (err error) {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	etcd := shouldUpdateEtcd(*installedOrUpgradedEtcdVersion, *updateEtcdVersion)
+	etcd := getEtcdUpgradePath(*installedOrUpgradedEtcdVersion, *updateEtcdVersion)
 	// check if OpenEBS integration has been enabled in the new application
 	openEBSEnabled := !r.installedApp.Manifest.OpenEBSEnabled() && r.updateApp.Manifest.OpenEBSEnabled()
 	r.targetStep = newTargetUpdateStep(updateStep{
@@ -92,7 +91,6 @@ func (r *phaseBuilder) initSteps(ctx context.Context) (err error) {
 		runtimeUpdates: runtimeAppUpdates,
 		etcd:           etcd,
 		gravity:        r.planTemplate.GravityPackage,
-		supportsTaints: supportsTaints(r.updateRuntimeAppVersion),
 		openEBSEnabled: openEBSEnabled,
 		userConfig:     r.userConfig,
 		numParallel:    r.numParallel,
@@ -126,7 +124,7 @@ func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []interme
 			return nil, nil, trace.Wrap(err)
 		}
 		lastUpgradeEtcdVersion = updateEtcdVersion
-		update.etcd = shouldUpdateEtcd(*installedEtcdVersion, *updateEtcdVersion)
+		update.etcd = getEtcdUpgradePath(*installedEtcdVersion, *updateEtcdVersion)
 		result[version] = update
 		serverUpdates, err := r.intermediateConfigUpdates(
 			r.installedApp.Manifest,
@@ -153,39 +151,51 @@ func (r phaseBuilder) buildIntermediateSteps(context.Context) (updates []interme
 
 func (r phaseBuilder) collectIntermediateSteps() (result map[string]intermediateUpdateStep, err error) {
 	result = make(map[string]intermediateUpdateStep)
-	err = pack.ForeachPackage(r.packages, func(env pack.PackageEnvelope) error {
-		labels := pack.Labels(env.RuntimeLabels)
-		if !labels.HasAny(pack.PurposeRuntimeUpgrade) {
-			return nil
+	for _, intermediateVersion := range r.updateApp.Manifest.SystemOptions.Dependencies.IntermediateVersions {
+		if _, ok := result[intermediateVersion.Version.String()]; ok {
+			continue
 		}
-		version := labels[pack.PurposeRuntimeUpgrade]
-		step, ok := result[version]
-		if !ok {
-			v, err := semver.NewVersion(version)
-			if err != nil {
-				return trace.Wrap(err, "invalid semver: %q", version)
-			}
-			if r.shouldSkipIntermediateUpdate(*v) {
-				return nil
-			}
-			step = intermediateUpdateStep{
-				updateStep: newUpdateStep(updateStep{
-					userConfig:  r.userConfig,
-					numParallel: r.numParallel,
-				}),
-				runtimeAppVersion: *v,
-			}
+		if r.shouldSkipIntermediateUpdate(intermediateVersion.Version) {
+			continue
 		}
-		if err := step.fromPackage(env, r.apps); err != nil {
-			return trace.Wrap(err)
+		step, err := r.newIntermediateStep(intermediateVersion)
+		if err != nil {
+			return nil, trace.Wrap(err)
 		}
-		result[version] = step
-		return nil
-	})
-	if err != nil {
-		return nil, trace.Wrap(err)
+		result[intermediateVersion.Version.String()] = *step
 	}
 	return result, nil
+}
+
+func (r phaseBuilder) newIntermediateStep(v schema.IntermediateVersion) (*intermediateUpdateStep, error) {
+	step := updateStep{
+		userConfig:  r.userConfig,
+		numParallel: r.numParallel,
+	}
+	for _, pkg := range v.Dependencies.Packages {
+		switch pkg.Locator.Name {
+		case constants.PlanetPackage:
+			step.runtime = pkg.Locator
+		case constants.TeleportPackage:
+			step.teleport = pkg.Locator
+		case constants.GravityPackage:
+			step.gravity = pkg.Locator
+		}
+	}
+	for _, pkg := range v.Dependencies.Apps {
+		app, err := r.apps.GetApp(pkg.Locator)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		step.apps = append(step.apps, *app)
+		if app.Package.Name == defaults.Runtime {
+			step.runtimeApp = *app
+		}
+	}
+	return &intermediateUpdateStep{
+		updateStep:        newUpdateStep(step),
+		runtimeAppVersion: v.Version,
+	}, nil
 }
 
 // intermediateConfigUpdates computes the configuration updates for a specific update step
@@ -253,35 +263,6 @@ func (r phaseBuilder) intermediateConfigUpdates(
 		updates = append(updates, updateServer)
 	}
 	return updates, nil
-}
-
-func (r *intermediateUpdateStep) fromPackage(env pack.PackageEnvelope, apps libapp.Applications) error {
-	switch env.Locator.Name {
-	case constants.PlanetPackage:
-		r.runtime = env.Locator
-	case constants.TeleportPackage:
-		r.teleport = env.Locator
-	case constants.GravityPackage:
-		r.gravity = env.Locator
-	default:
-		if env.Type == "" {
-			break
-		}
-		app, err := apps.GetApp(env.Locator)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-		r.apps = append(r.apps, *app)
-		if app.Package.Name == defaults.Runtime {
-			r.runtimeApp = *app
-			runtimeAppVersion, err := app.Package.SemVer()
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			r.supportsTaints = supportsTaints(*runtimeAppVersion)
-		}
-	}
-	return nil
 }
 
 func (r intermediateUpdateStep) build(leadMaster storage.Server, installedApp, updateApp loc.Locator) *builder.Phase {
@@ -852,17 +833,15 @@ func (r updateStep) commonNode(
 			Server: &server.Server,
 		},
 	}))
-	if r.supportsTaints {
-		phases = append(phases, builder.NewPhase(storage.OperationPhase{
-			ID:          "taint",
-			Executor:    taintNode,
-			Description: fmt.Sprintf("Taint node %q", server.Hostname),
-			Data: &storage.OperationPhaseData{
-				Server:     &server.Server,
-				ExecServer: executor,
-			},
-		}))
-	}
+	phases = append(phases, builder.NewPhase(storage.OperationPhase{
+		ID:          "taint",
+		Executor:    taintNode,
+		Description: fmt.Sprintf("Taint node %q", server.Hostname),
+		Data: &storage.OperationPhaseData{
+			Server:     &server.Server,
+			ExecServer: executor,
+		},
+	}))
 	phases = append(phases, builder.NewPhase(storage.OperationPhase{
 		ID:          "uncordon",
 		Executor:    uncordonNode,
@@ -883,18 +862,15 @@ func (r updateStep) commonNode(
 			},
 		}))
 	}
-	if r.supportsTaints {
-		phases = append(phases, builder.NewPhase(storage.OperationPhase{
-			ID:          "untaint",
-			Executor:    untaintNode,
-			Description: fmt.Sprintf("Remove taint from node %q", server.Hostname),
-			Data: &storage.OperationPhaseData{
-				Server:     &server.Server,
-				ExecServer: executor,
-			},
-		}))
-	}
-	return phases
+	return append(phases, builder.NewPhase(storage.OperationPhase{
+		ID:          "untaint",
+		Executor:    untaintNode,
+		Description: fmt.Sprintf("Remove taint from node %q", server.Hostname),
+		Data: &storage.OperationPhaseData{
+			Server:     &server.Server,
+			ExecServer: executor,
+		},
+	}))
 }
 
 func (r updateStep) String() string {
@@ -936,8 +912,6 @@ type updateStep struct {
 	// runtimeUpdates lists updates to runtime applications in proper
 	// order (i.e. with RBAC application in front)
 	runtimeUpdates []loc.Locator
-	// supportsTaints specifies whether this runtime version supports node taints
-	supportsTaints bool
 	// openEBSEnabled specifies whether openEBS application is enabled and should be updated
 	openEBSEnabled bool
 	// userConfig specifies additional configuration attributes

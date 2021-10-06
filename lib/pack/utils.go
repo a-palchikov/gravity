@@ -563,16 +563,6 @@ func (r Labels) HasPurpose(values ...string) bool {
 	return false
 }
 
-// HasAny returns true if these labels contain any of the specified keys
-func (r Labels) HasAny(keys ...string) bool {
-	for _, key := range keys {
-		if _, ok := r[key]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 // FindAnyRuntimePackageWithConfig searches for the runtime package and the corresponding
 // configuration package in the specified package service.
 // It looks up both legacy packages and packages marked as runtime

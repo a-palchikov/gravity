@@ -17,10 +17,11 @@ limitations under the License.
 package versions
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gravitational/gravity/lib/loc"
-	"github.com/gravitational/gravity/lib/pack"
+	"github.com/gravitational/gravity/lib/schema"
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
@@ -61,10 +62,10 @@ var (
 	DirectUpgradeVersions = Versions{
 		// Gravity version 7.1.x adopted Kubernetes 1.19.x, but development
 		// has stopped on 7.1.x and is being continued on 8.0.x.
-		semver.New("7.1.0"),
-		semver.New("8.0.0"),
+		*semver.New("7.1.0"),
+		*semver.New("8.0.0"),
 		// Keep the latest version to allow upgrade within the current major
-		semver.New("9.0.0"),
+		*semver.New("9.0.0"),
 	}
 
 	// UpgradeViaVersions maps older gravity versions to versions that can be
@@ -72,11 +73,11 @@ var (
 	//
 	// Specified versions are treated as described above.
 	//
-	// TODO(dima): remove once the upgrade-via has been completely ported.
+	// TODO(dima): remove this warning once the upgrade-via has been completely ported.
 	// This version does not currently support upgrades via intermediate
 	// runtimes.
-	UpgradeViaVersions = map[*semver.Version]Versions{
-		semver.New("7.0.0"): {semver.New("8.0.0")},
+	UpgradeViaVersions = map[semver.Version]Versions{
+		*semver.New("7.0.0"): {*semver.New("8.0.0")},
 	}
 )
 
@@ -86,7 +87,7 @@ var (
 //
 //  - Direct upgrade is supported between old and new versions, OR
 //  - This is an upgrade with intermediate hops.
-func (r RuntimeUpgradePath) Verify(packages pack.PackageService) error {
+func (r RuntimeUpgradePath) Verify(m schema.Manifest) error {
 	if err := r.checkAndSetDefaults(); err != nil {
 		return trace.Wrap(err)
 	}
@@ -114,7 +115,7 @@ func (r RuntimeUpgradePath) Verify(packages pack.PackageService) error {
 	}
 	// Make sure that for each required intermediate runtime version, there's
 	// a corresponding package in the cluster's package service.
-	runtimes, err := r.checkIntermediateRuntimes(packages, intermediateVersions)
+	runtimes, err := r.checkIntermediateRuntimes(m, intermediateVersions)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -130,7 +131,7 @@ func (r RuntimeUpgradePath) SupportsDirectUpgrade() bool {
 		upgradeVersions = DirectUpgradeVersions
 	}
 	for _, version := range upgradeVersions {
-		if loc.GreaterOrEqualPatch(*r.From, *version) {
+		if loc.GreaterOrEqualPatch(*r.From, version) {
 			return true
 		}
 	}
@@ -146,7 +147,7 @@ func (r RuntimeUpgradePath) SupportsUpgradeVia() Versions {
 		upgradeVersions = UpgradeViaVersions
 	}
 	for version, via := range upgradeVersions {
-		if loc.GreaterOrEqualPatch(*r.From, *version) {
+		if loc.GreaterOrEqualPatch(*r.From, version) {
 			return via
 		}
 	}
@@ -165,18 +166,18 @@ type RuntimeUpgradePath struct {
 	// directUpgradeVersions defines versions that can upgrade directly.
 	directUpgradeVersions Versions
 	// upgradeViaVersions defines versions that can upgrade with intermediate hops.
-	upgradeViaVersions map[*semver.Version]Versions
+	upgradeViaVersions map[semver.Version]Versions
 }
 
 // Versions represents a list of semvers.
-type Versions []*semver.Version
+type Versions []semver.Version
 
 // String returns string representation of versions, indicating that these
 // versions are treated as minimum patch versions.
 func (v Versions) String() string {
 	var versions []string
 	for _, version := range v {
-		versions = append(versions, version.String()+" or greater")
+		versions = append(versions, fmt.Sprint(version.String(), " or greater"))
 	}
 	return strings.Join(versions, ", ")
 }
@@ -204,9 +205,9 @@ func (r *RuntimeUpgradePath) checkAndSetDefaults() error {
 
 // checkIntermediateRuntimes validates that required intermediate runtimes
 // exist in the provided package service and returns their locators.
-func (r RuntimeUpgradePath) checkIntermediateRuntimes(packages pack.PackageService, intermediateVersions Versions) (runtimes []loc.Locator, err error) {
+func (r RuntimeUpgradePath) checkIntermediateRuntimes(m schema.Manifest, intermediateVersions Versions) (runtimes []loc.Locator, err error) {
 	for _, intermediateVersion := range intermediateVersions {
-		runtimePackage, err := findIntermediateRuntime(packages, intermediateVersion)
+		runtimePackage, err := findIntermediateRuntime(m, intermediateVersion)
 		if err != nil && !trace.IsNotFound(err) {
 			return nil, trace.Wrap(err)
 		}
@@ -215,28 +216,21 @@ func (r RuntimeUpgradePath) checkIntermediateRuntimes(packages pack.PackageServi
 			return nil, trace.BadParameter(needsIntermediateErrorTpl, r.From,
 				r.To, intermediateVersions)
 		}
-		runtimes = append(runtimes, runtimePackage.Locator)
+		runtimes = append(runtimes, *runtimePackage)
 	}
 	return runtimes, nil
 }
 
-// hasIntermediateRuntime searches for a runtime package that satisfies the
-// specified required intermediate runtime version.
-func findIntermediateRuntime(packages pack.PackageService, intermediateVersion *semver.Version) (*pack.PackageEnvelope, error) {
-	return pack.FindPackage(packages, func(e pack.PackageEnvelope) bool {
-		if !loc.IsSameApp(e.Locator, loc.Runtime) {
-			return false
+// hasIntermediateRuntime searches for the runtime application package that satisfies the
+// specified required intermediate runtime application version.
+func findIntermediateRuntime(m schema.Manifest, intermediateVersion semver.Version) (*loc.Locator, error) {
+	for _, v := range m.SystemOptions.Dependencies.IntermediateVersions {
+		if loc.GreaterOrEqualPatch(v.Version, intermediateVersion) {
+			loc := loc.Runtime.WithLiteralVersion(v.Version.String())
+			return &loc, nil
 		}
-		versionLabel := e.RuntimeLabels[pack.PurposeRuntimeUpgrade]
-		if versionLabel == "" {
-			return false
-		}
-		version, err := semver.NewVersion(versionLabel)
-		if err != nil {
-			return false
-		}
-		return loc.GreaterOrEqualPatch(*version, *intermediateVersion)
-	})
+	}
+	return nil, trace.NotFound("no runtime application for the specified version")
 }
 
 const (

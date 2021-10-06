@@ -30,6 +30,7 @@ import (
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/utils"
 
+	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1174,6 +1175,18 @@ func (r *Runtime) UnmarshalJSON(data []byte) error {
 type SystemDependencies struct {
 	// Runtime describes the runtime package
 	Runtime *Dependency `json:"runtimePackage,omitempty"`
+	// IntermediateVersions lists additional package dependencies for each intermediate
+	// version embedded in the installer
+	IntermediateVersions []IntermediateVersion `json:"intermediateVersions,omitempty"`
+}
+
+// IntermediateVersion describes an instance of embedded runtime application dependencies
+// for a specific version
+type IntermediateVersion struct {
+	// Version specifies the version of the embedded runtime application
+	Version semver.Version `json:"version"`
+	// Dependencies lists embedded dependencies
+	Dependencies
 }
 
 // Docker describes docker options

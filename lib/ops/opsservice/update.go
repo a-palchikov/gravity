@@ -442,12 +442,8 @@ func (s *site) createUpdateOperation(context context.Context, req ops.CreateSite
 	return key, nil
 }
 
-func (s *site) getRuntimeApplication(locator loc.Locator) (*app.Application, error) {
-	application, err := s.apps().GetApp(locator)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	runtimeApplication, err := s.apps().GetApp(*(application.Manifest.Base()))
+func (s *site) getRuntimeApplication(app app.Application) (*app.Application, error) {
+	runtimeApplication, err := s.apps().GetApp(*(app.Manifest.Base()))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -467,11 +463,15 @@ func (s *site) validateUpdateOperationRequest(req ops.CreateSiteAppUpdateOperati
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	currentRuntime, err := s.getRuntimeApplication(*currentPackage)
+	currentRuntime, err := s.getRuntimeApplication(*s.app)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	updateRuntime, err := s.getRuntimeApplication(*updatePackage)
+	updateClusterApp, err := s.apps().GetApp(*updatePackage)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	updateRuntime, err := s.getRuntimeApplication(*updateClusterApp)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -487,7 +487,7 @@ func (s *site) validateUpdateOperationRequest(req ops.CreateSiteAppUpdateOperati
 		From: currentRuntimeVersion,
 		To:   updateRuntimeVersion,
 	}
-	err = path.Verify(s.packages())
+	err = path.Verify(updateClusterApp.Manifest)
 	if err != nil {
 		return trace.Wrap(err)
 	}
