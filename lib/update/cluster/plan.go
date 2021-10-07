@@ -36,12 +36,14 @@ import (
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/state"
 	"github.com/gravitational/gravity/lib/storage"
+	"github.com/gravitational/gravity/lib/update/cluster/phases"
+	"github.com/gravitational/gravity/lib/update/cluster/versions"
 	"github.com/gravitational/gravity/lib/utils"
+	"github.com/gravitational/teleport/lib/services"
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -103,18 +105,51 @@ func InitOperationPlan(
 	}
 	logrus.WithField("version", currentEtcdVersion.String()).Info("Current etcd version.")
 
+	servers, err := storage.GetLocalServers(clusterEnv.Backend)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	servers, err = checkAndSetServerDefaults(servers, clusterEnv.Client.CoreV1().Nodes())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	links, err := clusterEnv.Backend.GetOpsCenterLinks(operation.SiteDomain)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	roles, err := clusterEnv.Backend.GetRoles()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	installedApp, err := storage.GetLocalPackage(clusterEnv.Backend)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	trustedClusters, err := clusterEnv.Backend.GetTrustedClusters()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	plan, err = newOperationPlan(ctx, planConfig{
-		Backend:            clusterEnv.Backend,
-		Apps:               clusterEnv.Apps,
-		Packages:           clusterEnv.ClusterPackages,
-		Client:             clusterEnv.Client,
-		DNSConfig:          dnsConfig,
-		Operator:           clusterEnv.Operator,
-		Operation:          operation,
-		Leader:             leader,
-		UserConfig:         userConfig,
-		ServiceUser:        &cluster.ServiceUser,
-		CurrentEtcdVersion: *currentEtcdVersion,
+		apps:               clusterEnv.Apps,
+		packages:           clusterEnv.ClusterPackages,
+		dnsConfig:          dnsConfig,
+		operator:           clusterEnv.Operator,
+		operation:          operation,
+		leadMaster:         leader,
+		userConfig:         userConfig,
+		serviceUser:        &cluster.ServiceUser,
+		currentEtcdVersion: *currentEtcdVersion,
+		servers:            servers,
+		links:              links,
+		roles:              roles,
+		trustedClusters:    trustedClusters,
+		installedApp:       *installedApp,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -134,27 +169,12 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		return nil, trace.Wrap(err)
 	}
 
-	servers, err := storage.GetLocalServers(config.Backend)
+	installedApp, err := config.apps.GetApp(config.installedApp)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	servers, err = checkAndSetServerDefaults(servers, config.Client.CoreV1().Nodes())
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	installedPackage, err := storage.GetLocalPackage(config.Backend)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	installedApp, err := config.Apps.GetApp(*installedPackage)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	installedRuntimeApp, err := config.Apps.GetApp(*(installedApp.Manifest.Base()))
+	installedRuntimeApp, err := config.apps.GetApp(*(installedApp.Manifest.Base()))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -163,17 +183,17 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		return nil, trace.Wrap(err)
 	}
 
-	updatePackage, err := config.Operation.Update.Package()
+	updatePackage, err := config.operation.Update.Package()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	updateApp, err := config.Apps.GetApp(*updatePackage)
+	updateApp, err := config.apps.GetApp(*updatePackage)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
-	updateRuntimeApp, err := config.Apps.GetApp(*(updateApp.Manifest.Base()))
+	updateRuntimeApp, err := config.apps.GetApp(*(updateApp.Manifest.Base()))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -192,21 +212,6 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		return nil, trace.Wrap(err)
 	}
 
-	links, err := config.Backend.GetOpsCenterLinks(config.Operation.SiteDomain)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	trustedClusters, err := config.Backend.GetTrustedClusters()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
-	roles, err := config.Backend.GetRoles()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-
 	gravityPackage, err := updateRuntimeApp.Manifest.Dependencies.ByName(constants.GravityPackage)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -220,25 +225,9 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 	}
 
 	builder := phaseBuilder{
-		planTemplate: storage.OperationPlan{
-			OperationID:        config.Operation.ID,
-			OperationType:      config.Operation.Type,
-			AccountID:          config.Operation.AccountID,
-			ClusterName:        config.Operation.SiteDomain,
-			Servers:            servers,
-			DNSConfig:          config.DNSConfig,
-			GravityPackage:     *gravityPackage,
-			OfflineCoordinator: config.Leader,
-		},
-		operator:                   config.Operator,
-		operation:                  *config.Operation,
+		planConfig:                 config,
+		gravityPackage:             *gravityPackage,
 		appUpdates:                 appUpdates,
-		links:                      links,
-		trustedClusters:            trustedClusters,
-		packages:                   config.Packages,
-		apps:                       config.Apps,
-		roles:                      roles,
-		leadMaster:                 *config.Leader,
 		installedApp:               *installedApp,
 		updateApp:                  *updateApp,
 		installedRuntimeApp:        *installedRuntimeApp,
@@ -247,10 +236,6 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		updateRuntimeAppVersion:    *updateRuntimeAppVersion,
 		installedTeleport:          *installedTeleport,
 		updateTeleport:             *updateTeleport,
-		serviceUser:                *config.ServiceUser,
-		userConfig:                 config.UserConfig,
-		currentEtcdVersion:         config.CurrentEtcdVersion,
-		numParallel:                NumParallel(),
 	}
 
 	err = builder.initSteps(ctx)
@@ -262,28 +247,22 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 }
 
 func (r *planConfig) checkAndSetDefaults() error {
-	if r.Client == nil {
-		return trace.BadParameter("Kubernetes client is required")
-	}
-	if r.Apps == nil {
+	if r.apps == nil {
 		return trace.BadParameter("application service is required")
 	}
-	if r.Packages == nil {
+	if r.packages == nil {
 		return trace.BadParameter("package service is required")
 	}
-	if r.Backend == nil {
-		return trace.BadParameter("backend is required")
-	}
-	if r.Operator == nil {
+	if r.operator == nil {
 		return trace.BadParameter("cluster operator is required")
 	}
-	if r.Operation == nil {
+	if r.operation == nil {
 		return trace.BadParameter("cluster operation is required")
 	}
-	if r.Leader == nil {
+	if r.leadMaster == nil {
 		return trace.BadParameter("operation leader node is required")
 	}
-	if r.ServiceUser == nil {
+	if r.serviceUser == nil {
 		return trace.BadParameter("cluster service user is required")
 	}
 	return nil
@@ -291,28 +270,44 @@ func (r *planConfig) checkAndSetDefaults() error {
 
 // planConfig defines the configuration for creating a new operation plan
 type planConfig struct {
-	// Backend specifies the cluster backend for low-level queries
-	Backend storage.Backend
-	// Packages specifies the cluster package service
-	Packages pack.PackageService
-	// Apps specifies the cluster application service
-	Apps app.Applications
-	// Operator specifies the cluster service operator
-	Operator ops.Operator
-	// DNSConfig specifies the cluster DNS configuration
-	DNSConfig storage.DNSConfig
-	// Operation specifies the operation to generate the plan for
-	Operation *storage.SiteOperation
-	// Client specifies the kubernetes client
-	Client *kubernetes.Clientset
-	// Leader specifies the server to execute the upgrade operation on
-	Leader *storage.Server
-	// ServiceUser specifies the cluster's service user
-	ServiceUser *storage.OSUser
-	// UserConfig combines operation-specific custom configuration
-	UserConfig UserConfig
-	// CurrentEtcdVersion specifies the current version of etcd
-	CurrentEtcdVersion semver.Version
+	// packages specifies the cluster package service
+	packages pack.PackageService
+	// apps specifies the cluster application service
+	apps app.Applications
+	// operator specifies the cluster service operator
+	operator phases.PackageRotator
+	// dnsConfig specifies the cluster DNS configuration
+	dnsConfig storage.DNSConfig
+	// operation specifies the operation to generate the plan for
+	operation *storage.SiteOperation
+	// leadMaster specifies the server to execute the upgrade operation on
+	leadMaster *storage.Server
+	// serviceUser specifies the cluster's service user
+	serviceUser *storage.OSUser
+	// userConfig combines operation-specific custom configuration
+	userConfig UserConfig
+	// currentEtcdVersion specifies the current version of etcd
+	currentEtcdVersion semver.Version
+	// servers lists the cluster servers
+	servers []storage.Server
+	// links optionally lists additional remote hub references
+	links []storage.OpsCenterLink
+	// roles lists cluster roles and permissions to migrate
+	roles []services.Role
+	// trustedClusters lists trusted clusters connected to this cluster
+	trustedClusters []services.TrustedCluster
+	// installedApp identifies the installed cluster application
+	installedApp loc.Locator
+	// directUpgradeVersions optionally specifies custom list of versions
+	// we can upgrade directly. If unset, versions.DirectUpgradeVersions
+	// is used.
+	directUpgradeVersions versions.Versions
+	// upgradeViaVersions optionally specifies custom version mapping in case
+	// no direct upgrade is possible. If unset, versions.UpgradeViaVersions
+	// is used.
+	upgradeViaVersions map[semver.Version]versions.Versions
+	// numParallel limits the number of concurrent sub-phase invocations
+	numParallel int
 }
 
 // configUpdates computes the configuration updates for the specified list of servers
@@ -320,7 +315,7 @@ func (r phaseBuilder) configUpdates(
 	installedTeleport loc.Locator,
 	installedRuntimeFunc, updateRuntimeFunc runtimePackageGetterFunc,
 ) (updates []storage.UpdateServer, err error) {
-	for _, server := range r.planTemplate.Servers {
+	for _, server := range r.planConfig.servers {
 		installedRuntime, err := installedRuntimeFunc(server)
 		if err != nil {
 			return nil, trace.Wrap(err)
@@ -347,7 +342,7 @@ func (r phaseBuilder) configUpdates(
 				return nil, trace.Wrap(err)
 			}
 			secretsUpdate, err := r.operator.RotateSecrets(ops.RotateSecretsRequest{
-				Key:            (ops.SiteOperation)(r.operation).ClusterKey(),
+				Key:            (ops.SiteOperation)(*r.operation).ClusterKey(),
 				Server:         server,
 				RuntimePackage: *updateRuntime,
 				DryRun:         true,
@@ -356,7 +351,7 @@ func (r phaseBuilder) configUpdates(
 				return nil, trace.Wrap(err)
 			}
 			configUpdate, err := r.operator.RotatePlanetConfig(ops.RotatePlanetConfigRequest{
-				Key:            (ops.SiteOperation)(r.operation).Key(),
+				Key:            (ops.SiteOperation)(*r.operation).Key(),
 				Server:         server,
 				Manifest:       r.updateApp.Manifest,
 				RuntimePackage: *updateRuntime,
@@ -373,7 +368,7 @@ func (r phaseBuilder) configUpdates(
 		}
 		if needsTeleportUpdate {
 			_, nodeConfig, err := r.operator.RotateTeleportConfig(ops.RotateTeleportConfigRequest{
-				Key:             (ops.SiteOperation)(r.operation).Key(),
+				Key:             (ops.SiteOperation)(*r.operation).Key(),
 				Server:          server,
 				TeleportPackage: r.updateTeleport,
 				DryRun:          true,

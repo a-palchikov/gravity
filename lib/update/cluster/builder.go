@@ -33,7 +33,6 @@ import (
 	"github.com/gravitational/gravity/lib/update/internal/builder"
 
 	"github.com/coreos/go-semver/semver"
-	teleservices "github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/trace"
 )
 
@@ -45,9 +44,9 @@ func NumParallel() int {
 
 func (r phaseBuilder) initPhase() *builder.Phase {
 	if len(r.steps) != 0 {
-		return r.steps[0].initPhase(r.leadMaster, r.installedApp.Package, r.updateApp.Package)
+		return r.steps[0].initPhase(*r.leadMaster, r.installedApp.Package, r.updateApp.Package)
 	}
-	return r.targetStep.initPhase(r.leadMaster, r.installedApp.Package, r.updateApp.Package)
+	return r.targetStep.initPhase(*r.leadMaster, r.installedApp.Package, r.updateApp.Package)
 }
 
 func (r phaseBuilder) checksPhase() *builder.Phase {
@@ -123,7 +122,7 @@ func (r phaseBuilder) migrationPhase() *builder.Phase {
 			Description: "Migrate cluster roles to a new format",
 			Executor:    migrateRoles,
 			Data: &storage.OperationPhaseData{
-				ExecServer: &r.leadMaster,
+				ExecServer: r.leadMaster,
 			},
 		})
 	}
@@ -154,17 +153,17 @@ func (r phaseBuilder) newPlan() *storage.OperationPlan {
 
 	if len(r.steps) == 0 {
 		// Embed the target runtime step directly into root phase
-		r.targetStep.buildInline(&root, r.leadMaster, r.installedApp.Package, r.updateApp.Package,
+		r.targetStep.buildInline(&root, *r.leadMaster, r.installedApp.Package, r.updateApp.Package,
 			checksPhase, preUpdatePhase)
 	} else {
 		depends := []*builder.Phase{checksPhase}
 		// Otherwise, build a phase for each intermediate upgrade step
 		for _, step := range r.steps {
-			root.AddSequential(step.build(r.leadMaster, r.installedApp.Package, r.updateApp.Package).Require(depends...))
+			root.AddSequential(step.build(*r.leadMaster, r.installedApp.Package, r.updateApp.Package).Require(depends...))
 			depends = nil
 		}
 		// Followed by the final runtime upgrade step
-		root.AddSequential(r.targetStep.build(r.leadMaster, r.installedApp.Package, r.updateApp.Package))
+		root.AddSequential(r.targetStep.build(*r.leadMaster, r.installedApp.Package, r.updateApp.Package))
 	}
 
 	if migrationPhase := r.migrationPhase(); migrationPhase != nil {
@@ -177,7 +176,16 @@ func (r phaseBuilder) newPlan() *storage.OperationPlan {
 }
 
 func (r phaseBuilder) newPlanFrom(root *builder.Phase) *storage.OperationPlan {
-	return builder.ResolveInline(root, r.planTemplate)
+	return builder.ResolveInline(root, storage.OperationPlan{
+		OperationID:        r.planConfig.operation.ID,
+		OperationType:      r.planConfig.operation.Type,
+		AccountID:          r.planConfig.operation.AccountID,
+		ClusterName:        r.planConfig.operation.SiteDomain,
+		Servers:            r.planConfig.servers,
+		DNSConfig:          r.planConfig.dnsConfig,
+		GravityPackage:     r.gravityPackage,
+		OfflineCoordinator: r.leadMaster,
+	})
 }
 
 // etcdNumParallel indicates how many etcd phases to run in parallel.
@@ -191,13 +199,13 @@ func (r phaseBuilder) cleanupPhase() *builder.Phase {
 		Description:   "Run cleanup tasks",
 		LimitParallel: r.numParallel,
 	})
-	for i, server := range r.planTemplate.Servers {
+	for i, server := range r.planConfig.servers {
 		node := storage.OperationPhase{
 			ID:          server.Hostname,
 			Description: fmt.Sprintf("Clean up node %q", server.Hostname),
 			Executor:    cleanupNode,
 			Data: &storage.OperationPhaseData{
-				Server: &r.planTemplate.Servers[i],
+				Server: &r.planConfig.servers[i],
 			},
 		}
 		root.AddParallelRaw(node)
@@ -206,14 +214,10 @@ func (r phaseBuilder) cleanupPhase() *builder.Phase {
 }
 
 type phaseBuilder struct {
-	// operator specifies the cluster operator
-	operator libphase.PackageRotator
-	// planTemplate specifies the plan to bootstrap the resulting operation plan
-	planTemplate storage.OperationPlan
-	// operation is the operation to generate the plan for
-	operation storage.SiteOperation
-	// leadMaster refers to the master server running the update operation
-	leadMaster storage.Server
+	planConfig
+	// gravityPackage identifies the package with the gravity binary from the
+	// update cluster application
+	gravityPackage loc.Locator
 	// installedTeleport specifies the version of the currently installed teleport
 	installedTeleport loc.Locator
 	// updateTeleport specifies the version of teleport to update to
@@ -232,29 +236,10 @@ type phaseBuilder struct {
 	updateApp app.Application
 	// appUpdates lists the application updates
 	appUpdates []loc.Locator
-	// links is a list of configured remote Ops Center links
-	links []storage.OpsCenterLink
-	// trustedClusters is a list of configured trusted clusters
-	trustedClusters []teleservices.TrustedCluster
-	// packages is a reference to the cluster package service
-	packages pack.PackageService
-	// apps is a reference to the cluster application service
-	apps app.Applications
-	// roles is the existing cluster roles
-	roles []teleservices.Role
-	// serviceUser defines the service user on the cluster
-	serviceUser storage.OSUser
 	// steps lists additional intermediate runtime update steps
 	steps []intermediateUpdateStep
 	// targetStep defines the final runtime update step
 	targetStep targetUpdateStep
-	// currentEtcdVersion specifies the etcd version of the
-	// installed cluster
-	currentEtcdVersion semver.Version
-	// userConfig combines operation-specific custom configuration
-	userConfig UserConfig
-	// numParallel limits the number of concurrent sub-phase invocations
-	numParallel int
 }
 
 func getCurrentEtcdVersion(ctx context.Context, stateDir string) (version *semver.Version, err error) {

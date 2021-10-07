@@ -22,30 +22,313 @@ import (
 	"path"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gravitational/gravity/lib/app"
+	appservice "github.com/gravitational/gravity/lib/app/service"
 	apptest "github.com/gravitational/gravity/lib/app/service/test"
 	"github.com/gravitational/gravity/lib/archive"
 	"github.com/gravitational/gravity/lib/constants"
+	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
-	"github.com/gravitational/gravity/lib/ops/opsservice"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/storage"
+	"github.com/gravitational/gravity/lib/update/cluster/versions"
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/google/go-cmp/cmp"
-	teleservices "github.com/gravitational/teleport/lib/services"
 	"gopkg.in/check.v1"
 )
 
-type PlanSuite struct{}
+type PlanSuite struct {
+	clusterAppLoc             loc.Locator
+	runtimeAppLoc             loc.Locator
+	updateClusterAppLoc       loc.Locator
+	updateRuntimeAppLoc       loc.Locator
+	intermediateRuntimeAppLoc loc.Locator
+	runtimeLoc                loc.Locator
+	updateRuntimeLoc          loc.Locator
+	intermediateRuntimeLoc    loc.Locator
+
+	operation              storage.SiteOperation
+	links                  []storage.OpsCenterLink
+	clusterApp             *app.Application
+	updateClusterApp       *app.Application
+	intermediateRuntimeApp *app.Application
+	services               appservice.TestServices
+}
+
+func (s *PlanSuite) SetUpSuite(c *check.C) {
+	s.clusterAppLoc = newLoc("app:1.0.0")
+	s.updateClusterAppLoc = newLoc("app:3.0.0")
+	s.runtimeAppLoc = newLoc("kubernetes:1.0.0")
+	s.updateRuntimeAppLoc = loc.MustParseLocator("gravitational.io/runtime:3.0.0")
+	s.intermediateRuntimeAppLoc = loc.MustParseLocator("gravitational.io/runtime:2.0.0")
+	s.runtimeLoc = loc.MustParseLocator("gravitational.io/planet:1.0.0")
+	s.updateRuntimeLoc = loc.MustParseLocator("gravitational.io/planet:3.0.0")
+	s.intermediateRuntimeLoc = loc.MustParseLocator("gravitational.io/planet:2.0.0")
+	s.links = []storage.OpsCenterLink{
+		{
+			Hostname:   "ops.example.com",
+			Type:       storage.OpsCenterRemoteAccessLink,
+			RemoteAddr: "ops.example.com:3024",
+			APIURL:     "https://ops.example.com:32009",
+			Enabled:    true,
+		},
+	}
+}
+
+func (s *PlanSuite) SetUpTest(c *check.C) {
+	s.services = appservice.NewTestServices(c.MkDir(), c)
+}
+
+func (s *PlanSuite) TearDownTest(*check.C) {
+	s.services.Close()
+}
+
+func (s *PlanSuite) setupWithRuntimeUpdate(servers []storage.Server, c *check.C) params {
+	gravityPackage := newPackage("gravity:1.0.0")
+	teleportPackage := newPackage("teleport:1.0.0")
+	updateGravityPackage := newPackage("gravity:2.0.0")
+	depAppLoc1 := newLoc("dep-app-1:1.0.0")
+	depAppLoc2 := newLoc("dep-app-2:1.0.0")
+	depApp1 := apptest.SystemApplication(depAppLoc1).Build()
+	depApp2 := apptest.SystemApplication(depAppLoc2).Build()
+	rbacApp := apptest.SystemApplication(newLoc("rbac-app:1.0.0")).Build()
+	runtimeAppLoc := newLoc("kubernetes:1.0.0")
+	updateRuntimeAppLoc := newLoc("kubernetes:2.0.0")
+	runtimePackageLoc := newLoc("planet:1.0.0")
+	updateRuntimePackageLoc := newLoc("planet:2.0.0")
+	runtimeAppDep1 := apptest.SystemApplication(newLoc("runtime-app-1:1.0.0")).Build()
+	runtimeAppDep2 := apptest.SystemApplication(newLoc("runtime-app-2:1.0.0")).Build()
+	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimePackageLoc).
+		WithPackageDependencies(
+			newRuntimePackageWithEtcd(runtimePackageLoc, "3.3.2"),
+			gravityPackage, teleportPackage,
+		).
+		WithAppDependencies(rbacApp, runtimeAppDep1, runtimeAppDep2).
+		Build()
+	clusterApp := apptest.ClusterApplication(s.clusterAppLoc, runtimeApp).
+		WithAppDependencies(depApp1, depApp2).
+		Build()
+	updateDepAppLoc2 := newLoc("dep-app-2:3.0.0")
+	updateDepApp2 := apptest.SystemApplication(updateDepAppLoc2).Build()
+	updateRbacApp := apptest.SystemApplication(newLoc("rbac-app:2.0.0")).Build()
+	updateRuntimeAppDep2 := apptest.SystemApplication(newLoc("runtime-app-2:2.0.0")).Build()
+	updateRuntimeApp := apptest.RuntimeApplication(updateRuntimeAppLoc, updateRuntimePackageLoc).
+		WithPackageDependencies(
+			newRuntimePackageWithEtcd(updateRuntimePackageLoc, "3.3.3"),
+			updateGravityPackage, teleportPackage,
+		).
+		WithAppDependencies(updateRbacApp, runtimeAppDep1, updateRuntimeAppDep2).
+		Build()
+	updateClusterApp := apptest.ClusterApplication(s.updateClusterAppLoc, updateRuntimeApp).
+		WithAppDependencies(depApp1, updateDepApp2).
+		Build()
+
+	s.operation = storage.SiteOperation{
+		AccountID:  "account-id",
+		SiteDomain: "test",
+		ID:         "id",
+		Type:       ops.OperationUpdate,
+		Update: &storage.UpdateOperationState{
+			UpdatePackage: s.updateClusterAppLoc.String(),
+		},
+	}
+
+	var clusterRuntimeApp *app.Application
+	s.clusterApp, clusterRuntimeApp = apptest.CreateApplication(apptest.AppRequest{
+		App:      clusterApp,
+		Apps:     s.services.Apps,
+		Packages: s.services.Packages,
+	}, c)
+	var updateClusterRuntimeApp *app.Application
+	s.updateClusterApp, updateClusterRuntimeApp = apptest.CreateApplication(apptest.AppRequest{
+		App:      updateClusterApp,
+		Apps:     s.services.Apps,
+		Packages: s.services.Packages,
+	}, c)
+	return params{
+		planConfig: planConfig{
+			servers:   servers,
+			apps:      s.services.Apps,
+			packages:  s.services.Packages,
+			operator:  testOperator,
+			operation: &s.operation,
+			dnsConfig: storage.DefaultDNSConfig,
+			// Use an alternative (other than first) master node as leader
+			leadMaster:         &servers[1],
+			serviceUser:        &serviceUser,
+			userConfig:         userConfig,
+			currentEtcdVersion: newVer("3.3.2"),
+			links:              s.links,
+			installedApp:       clusterApp.Locator(),
+			directUpgradeVersions: versions.Versions{
+				newVer("1.0.0"),
+			},
+			// FIXME(dima): this should not be used
+			upgradeViaVersions: map[semver.Version]versions.Versions{
+				newVer("1.0.0"): {newVer("2.0.0")},
+			},
+			numParallel: numParallelPhases,
+		},
+		gravityPackage: updateGravityPackage.Loc,
+		etcdVersion: etcdVersion{
+			installed: "3.3.2",
+			update:    "3.3.3",
+		},
+		runtimeUpdates: []loc.Locator{
+			updateRbacApp.Locator(),
+			updateRuntimeAppDep2.Locator(),
+			updateRuntimeApp.Locator(),
+		},
+		appUpdates: []loc.Locator{
+			updateDepApp2.Locator(),
+			updateClusterApp.Locator(),
+		},
+		installedApp:        *s.clusterApp,
+		installedRuntimeApp: *clusterRuntimeApp,
+		updateApp:           *s.updateClusterApp,
+		updateRuntimeApp:    *updateClusterRuntimeApp,
+		teleportLoc:         teleportPackage.Loc,
+	}
+}
+
+func (s *PlanSuite) setupWithIntermediateRuntimeUpdate(servers []storage.Server, c *check.C) params {
+	/*
+			# installed runtime
+			packages:
+			    - gravitational.io/gravity:1.0.0
+			  apps:
+			    - gravitational.io/runtime-dep-1:1.0.0
+			    - gravitational.io/runtime-dep-2:1.0.0
+			    - gravitational.io/rbac-app:1.0.0
+
+			# intermediate runtime
+			packages:
+			    - gravitational.io/gravity:2.0.0
+			  apps:
+			    - gravitational.io/runtime-dep-1:1.0.0
+			    - gravitational.io/runtime-dep-2:2.0.0
+			    - gravitational.io/rbac-app:2.0.0
+
+			# update runtime
+			packages:
+			    - gravitational.io/gravity:3.0.0
+			  apps:
+			    - gravitational.io/runtime-dep-1:1.0.0
+			    - gravitational.io/runtime-dep-2:3.0.0
+			    - gravitational.io/rbac-app:3.0.0
+
+		    # installed app
+		    - gravitational.io/app-dep-1:1.0.0
+		    - gravitational.io/app-dep-2:1.0.0
+
+		    # update app
+		    - gravitational.io/app-dep-1:1.0.0
+		    - gravitational.io/app-dep-2:3.0.0
+	*/
+
+	gravityLoc := newLoc("gravity:1.0.0")
+	intermediateGravityLoc := newLoc("gravity:2.0.0")
+	updateGravityLoc := newLoc("gravity:3.0.0")
+	depAppLoc1 := newLoc("dep-app-1:1.0.0")
+	depAppLoc2 := newLoc("dep-app-2:1.0.0")
+	depApp1 := apptest.SystemApplication(depAppLoc1).Build()
+	depApp2 := apptest.SystemApplication(depAppLoc2).Build()
+	runtimeApp := apptest.RuntimeApplication(apptest.RuntimeApplicationLoc, apptest.RuntimePackageLoc).
+		WithSchemaPackageDependencies(gravityLoc).
+		Build()
+	clusterApp := apptest.ClusterApplication(s.clusterAppLoc, runtimeApp).
+		WithAppDependencies(depApp1, depApp2).
+		Build()
+	intermediateRuntimeApp := apptest.RuntimeApplication(
+		s.intermediateRuntimeAppLoc, s.intermediateRuntimeLoc).
+		WithSchemaPackageDependencies(intermediateGravityLoc).
+		Build()
+	updateDepAppLoc2 := newLoc("dep-app-2:3.0.0")
+	updateDepApp2 := apptest.SystemApplication(updateDepAppLoc2).Build()
+	updateRuntimeApp := apptest.RuntimeApplication(apptest.RuntimeApplicationLoc, apptest.RuntimePackageLoc).
+		WithSchemaPackageDependencies(updateGravityLoc).
+		Build()
+	updateClusterApp := apptest.ClusterApplication(s.updateClusterAppLoc, updateRuntimeApp).
+		WithAppDependencies(depApp1, updateDepApp2).
+		Build()
+	s.clusterApp, _ = apptest.CreateApplication(apptest.AppRequest{
+		App:      clusterApp,
+		Apps:     s.services.Apps,
+		Packages: s.services.Packages,
+	}, c)
+	s.intermediateRuntimeApp, _ = apptest.CreateApplication(apptest.AppRequest{
+		App:      intermediateRuntimeApp,
+		Apps:     s.services.Apps,
+		Packages: s.services.Packages,
+	}, c)
+	s.updateClusterApp, _ = apptest.CreateApplication(apptest.AppRequest{
+		App:      updateClusterApp,
+		Apps:     s.services.Apps,
+		Packages: s.services.Packages,
+	}, c)
+	// TODO(dima)
+	return params{
+		gravityPackage: updateGravityLoc,
+		//runtimeUpdates: []loc.Locator{},
+	}
+}
 
 var _ = check.Suite(&PlanSuite{})
 
 func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
+	servers := []storage.Server{
+		newMaster("node-1"),
+		newMaster("node-2"),
+		newWorker("node-3"),
+	}
+	params := s.setupWithRuntimeUpdate(servers, c)
+
+	// exercise
+	obtainedPlan, err := newOperationPlan(context.Background(), params.planConfig)
+	c.Assert(err, check.IsNil)
+
+	// verify
+	updates := params.updates()
+	leadMaster := updates[1]
+	rearrangedServers := []storage.UpdateServer{updates[1], updates[0], updates[2]}
+	expectedPlan := storage.OperationPlan{
+		OperationID:        s.operation.ID,
+		OperationType:      s.operation.Type,
+		AccountID:          s.operation.AccountID,
+		ClusterName:        s.operation.SiteDomain,
+		Servers:            servers,
+		DNSConfig:          storage.DefaultDNSConfig,
+		GravityPackage:     loc.MustParseLocator("gravitational.io/gravity:3.0.0"),
+		OfflineCoordinator: params.planConfig.leadMaster,
+		Phases: []storage.OperationPhase{
+			params.init(rearrangedServers),
+			params.checks("/init"),
+			params.preUpdate("/init", "/checks"),
+			params.bootstrap(rearrangedServers, params.gravityPackage, "/checks", "/pre-update"),
+			params.coreDNS("/bootstrap"),
+			params.masters(leadMaster, updates[0:1], params.gravityPackage, "id", "/coredns"),
+			params.nodes(updates[2:], leadMaster.Server, params.gravityPackage, "id", "/masters"),
+			params.etcd(leadMaster.Server, updates[0:1], params.etcdVersion),
+			params.config("/etcd"),
+			params.runtime(params.runtimeUpdates, "/config"),
+			params.migration("/runtime"),
+			params.app("/migration"),
+			params.cleanup(),
+		},
+	}
+	if !cmp.Equal(*obtainedPlan, expectedPlan) {
+		c.Error("Plans differ:", cmp.Diff(*obtainedPlan, expectedPlan))
+	}
+}
+
+/*
+func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate0(c *check.C) {
 	// setup
 	installedRuntimeApp := newApp("gravitational.io/runtime:1.0.0", installedRuntimeAppManifest)
 	installedApp := newApp("gravitational.io/app:1.0.0", installedAppManifest)
@@ -478,43 +761,59 @@ func (s *PlanSuite) TestDeterminesWhetherToUpdateEtcd(c *check.C) {
 		update:    "3.3.3",
 	})
 }
+*/
 
-func newBuilder(c *check.C, params params) phaseBuilder {
-	builder := phaseBuilder{
-		operator: testOperator,
-		operation: storage.SiteOperation{
-			AccountID:  "000",
-			SiteDomain: "test",
-			ID:         "123",
-			Type:       ops.OperationUpdate,
-		},
-		installedRuntimeApp: params.installedRuntimeApp,
-		installedApp:        params.installedApp,
-		updateRuntimeApp:    params.updateRuntimeApp,
-		updateApp:           params.updateApp,
-		links:               params.links,
-		trustedClusters:     params.trustedClusters,
-		leadMaster:          params.leadMaster,
-		appUpdates:          params.appUpdates,
-		steps:               params.steps,
-		targetStep:          params.targetStep,
-		numParallel:         numParallelPhases,
-	}
-	gravityPackage, err := builder.updateRuntimeApp.Manifest.Dependencies.ByName(
-		constants.GravityPackage)
-	c.Assert(err, check.IsNil)
-	builder.planTemplate = storage.OperationPlan{
-		OperationID:        builder.operation.ID,
-		OperationType:      builder.operation.Type,
-		AccountID:          builder.operation.AccountID,
-		ClusterName:        builder.operation.SiteDomain,
-		Servers:            params.servers,
-		GravityPackage:     *gravityPackage,
-		DNSConfig:          params.dnsConfig,
-		OfflineCoordinator: &params.leadMaster,
-	}
-	return builder
-}
+//func (r *params) newPlan(c *check.C) *storage.OperationPlan {
+//	plan, err := newOperationPlan(context.Background(), planConfig{
+//		Packages:        r.packages,
+//		Apps:            r.apps,
+//		Operator:        r.operator,
+//		DNSConfig:       r.dnsConfig,
+//		Operation:       &r.operation,
+//		Leader:          r.leadServer,
+//		ServiceUser:     r.serviceUser,
+//		UserConfig:      r.userConfig,
+//		links:           r.links,
+//		roles:           r.roles,
+//		trustedClusters: r.trustedClusters,
+//		servers:         r.servers,
+//		installedApp:    r.installedApp,
+//		//CurrentEtcdVersion: r.currentEtcdVersion,
+//	})
+//	c.Assert(err, check.IsNil)
+//	return plan
+//}
+
+//func (r *params) newBuilder(c *check.C) phaseBuilder {
+//	builder := phaseBuilder{
+//		operator:            r.operator,
+//		operation:           r.operation,
+//		installedRuntimeApp: r.installedRuntimeApp,
+//		installedApp:        r.installedApp,
+//		updateRuntimeApp:    r.updateRuntimeApp,
+//		updateApp:           r.updateApp,
+//		links:               r.links,
+//		trustedClusters:     r.trustedClusters,
+//		leadMaster:          r.leadMaster,
+//		//steps:               params.steps,
+//		//targetStep:          params.targetStep,
+//		numParallel: numParallelPhases,
+//	}
+//	gravityPackage, err := builder.updateRuntimeApp.Manifest.Dependencies.ByName(
+//		constants.GravityPackage)
+//	c.Assert(err, check.IsNil)
+//	builder.planTemplate = storage.OperationPlan{
+//		OperationID:        builder.operation.ID,
+//		OperationType:      builder.operation.Type,
+//		AccountID:          builder.operation.AccountID,
+//		ClusterName:        builder.operation.SiteDomain,
+//		Servers:            params.servers,
+//		GravityPackage:     *gravityPackage,
+//		DNSConfig:          params.dnsConfig,
+//		OfflineCoordinator: &params.leadMaster,
+//	}
+//	return builder
+//}
 
 func (r *params) sub(id string, requires []string, phases ...storage.OperationPhase) storage.OperationPhase {
 	parentize(id, phases)
@@ -608,7 +907,7 @@ func (r *params) coreDNS(requires ...string) storage.OperationPhase {
 		Executor:    coredns,
 		Requires:    requires,
 		Data: &storage.OperationPhaseData{
-			Server: &r.leadMaster,
+			Server: r.planConfig.leadMaster,
 		},
 	}
 }
@@ -1239,7 +1538,7 @@ func (r *params) migration(requires ...string) storage.OperationPhase {
 
 func (r params) config(requires ...string) storage.OperationPhase {
 	masters, _ := fsm.SplitServers(r.servers)
-	masters = reorderStorageServers(masters, r.leadMaster)
+	masters = reorderStorageServers(masters, *r.planConfig.leadMaster)
 	return storage.OperationPhase{
 		ID:            "/config",
 		Description:   "Update system configuration on nodes",
@@ -1352,19 +1651,29 @@ func (r params) cleanup() storage.OperationPhase {
 	}
 }
 
+func (r params) updates() []storage.UpdateServer {
+	result := make([]storage.UpdateServer, 0, len(r.servers))
+	for _, s := range r.servers {
+		result = append(result, r.newUpdateServer(s))
+	}
+	return result
+}
+
 type params struct {
+	// configuration
+	planConfig
+
 	installedRuntimeApp app.Application
 	installedApp        app.Application
 	updateRuntimeApp    app.Application
 	updateApp           app.Application
-	links               []storage.OpsCenterLink
-	trustedClusters     []teleservices.TrustedCluster
-	leadMaster          storage.Server
-	dnsConfig           storage.DNSConfig
-	appUpdates          []loc.Locator
-	servers             []storage.Server
-	steps               []intermediateUpdateStep
-	targetStep          targetUpdateStep
+	teleportLoc         loc.Locator
+
+	// expectations
+	gravityPackage loc.Locator
+	etcdVersion    etcdVersion
+	runtimeUpdates []loc.Locator
+	appUpdates     []loc.Locator
 }
 
 func (r testRotator) RotateSecrets(ops.RotateSecretsRequest) (*ops.RotatePackageResponse, error) {
@@ -1382,10 +1691,10 @@ func (r testRotator) RotateTeleportConfig(ops.RotateTeleportConfigRequest) (*ops
 }
 
 var testOperator = testRotator{
-	secretsPackage:        loc.MustParseLocator("gravitational.io/secrets:0.0.1"),
-	runtimeConfigPackage:  loc.MustParseLocator("gravitational.io/planet-config:0.0.1"),
-	teleportMasterPackage: loc.MustParseLocator("gravitational.io/teleport-master-config:0.0.1"),
-	teleportNodePackage:   loc.MustParseLocator("gravitational.io/teleport-node-config:0.0.1"),
+	secretsPackage:        newLoc("secrets:0.0.1"),
+	runtimeConfigPackage:  newLoc("planet-config:0.0.1"),
+	teleportMasterPackage: newLoc("teleport-master-config:0.0.1"),
+	teleportNodePackage:   newLoc("teleport-node-config:0.0.1"),
 }
 
 type testRotator struct {
@@ -1393,16 +1702,6 @@ type testRotator struct {
 	runtimeConfigPackage  loc.Locator
 	teleportMasterPackage loc.Locator
 	teleportNodePackage   loc.Locator
-}
-
-func newApp(appLoc string, manifestBytes string) app.Application {
-	return app.Application{
-		Package:  loc.MustParseLocator(appLoc),
-		Manifest: schema.MustParseManifestYAML([]byte(manifestBytes)),
-		PackageEnvelope: pack.PackageEnvelope{
-			Manifest: []byte(manifestBytes),
-		},
-	}
 }
 
 func mustLocator(loc *loc.Locator, err error) loc.Locator {
@@ -1420,22 +1719,112 @@ func reorderStorageServers(servers []storage.Server, server storage.Server) (res
 	return servers
 }
 
-var runtimePackage = storage.RuntimePackage{
-	Update: &storage.RuntimeUpdate{
-		Package: loc.MustParseLocator("gravitational.io/planet:2.0.0"),
-	},
+func newApp(appLoc string, manifestBytes string) app.Application {
+	return app.Application{
+		Package:  loc.MustParseLocator(appLoc),
+		Manifest: schema.MustParseManifestYAML([]byte(manifestBytes)),
+		PackageEnvelope: pack.PackageEnvelope{
+			Manifest: []byte(manifestBytes),
+		},
+	}
 }
-var intermediateRuntimePackage = storage.RuntimePackage{
-	Update: &storage.RuntimeUpdate{
-		Package: loc.MustParseLocator("gravitational.io/planet:1.2.0"),
-	},
+
+func newWorker(name string) storage.Server {
+	return storage.Server{
+		AdvertiseIP: name,
+		Hostname:    name,
+		Role:        "node",
+		ClusterRole: string(schema.ServiceRoleNode),
+	}
 }
-var gravityInstalledLoc = loc.MustParseLocator("gravitational.io/gravity:1.0.0")
+
+func newMaster(name string) storage.Server {
+	return storage.Server{
+		AdvertiseIP: name,
+		Hostname:    name,
+		Role:        "node",
+		ClusterRole: string(schema.ServiceRoleMaster),
+	}
+}
+
+func (r params) newUpdateServer(s storage.Server) storage.UpdateServer {
+	return storage.UpdateServer{
+		Server: s,
+		Runtime: storage.RuntimePackage{
+			Installed:      r.installedRuntimeApp.Manifest.SystemOptions.Dependencies.Runtime.Locator,
+			SecretsPackage: &testOperator.secretsPackage,
+			Update: &storage.RuntimeUpdate{
+				Package:       r.updateRuntimeApp.Manifest.SystemOptions.Dependencies.Runtime.Locator,
+				ConfigPackage: testOperator.runtimeConfigPackage,
+			},
+		},
+		Teleport: storage.TeleportPackage{
+			Installed: r.teleportLoc,
+		},
+	}
+}
+
+func newVer(v string) semver.Version {
+	return *semver.New(v)
+}
+
+func newLoc(nameVersion string) loc.Locator {
+	parts := strings.Split(nameVersion, ":")
+	if len(parts) != 2 {
+		panic("invalid package reference")
+	}
+	return loc.Locator{
+		Repository: defaults.SystemAccountOrg,
+		Name:       parts[0],
+		Version:    parts[1],
+	}
+}
+
+func newPackage(nameVersion string) apptest.Package {
+	return apptest.Package{
+		Loc: newLoc(nameVersion),
+	}
+}
+
+func newRuntimePackageWithEtcd(loc loc.Locator, etcdVersion string) apptest.Package {
+	return apptest.Package{
+		Loc: loc,
+		Items: []*archive.Item{
+			archive.ItemFromString("orbit.manifest.json", fmt.Sprintf(`{
+	"version": "0.0.1",
+	"labels": [
+		{
+			"name": "version-etcd",
+			"value": "v%s"
+		}
+	]
+}`, etcdVersion)),
+		},
+	}
+}
 
 const (
 	numParallelPhases  = 3
 	numParallelWorkers = 4
+)
 
+var (
+	runtimePackage = storage.RuntimePackage{
+		Update: &storage.RuntimeUpdate{
+			Package: loc.MustParseLocator("gravitational.io/planet:2.0.0"),
+		},
+	}
+	intermediateRuntimePackage = storage.RuntimePackage{
+		Update: &storage.RuntimeUpdate{
+			Package: loc.MustParseLocator("gravitational.io/planet:1.2.0"),
+		},
+	}
+	gravityInstalledLoc = loc.MustParseLocator("gravitational.io/gravity:1.0.0")
+	serviceUser         = storage.OSUser{Name: "user", UID: "1000", GID: "1000"}
+	userConfig          = UserConfig{ParallelWorkers: numParallelWorkers}
+)
+
+const (
 	installedRuntimeAppManifest = `apiVersion: bundle.gravitational.io/v2
 kind: Runtime
 metadata:

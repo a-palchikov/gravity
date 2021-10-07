@@ -92,11 +92,11 @@ func (s *Suite) TestVersions(c *check.C) {
 		err := RuntimeUpgradePath{
 			From: &test.from,
 			To:   upgradeRuntime,
-			directUpgradeVersions: Versions{
+			DirectUpgradeVersions: Versions{
 				newVer("2.0.0"),
 				newVer("3.0.0"),
 			},
-			upgradeViaVersions: map[semver.Version]Versions{
+			UpgradeViaVersions: map[semver.Version]Versions{
 				newVer("1.0.0"): {newVer("2.0.10")},
 				newVer("1.1.0"): {newVer("2.1.0")},
 			},
@@ -121,7 +121,7 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 			path: RuntimeUpgradePath{
 				From: semver.New("6.1.30"),
 				To:   upgradeRuntime,
-				directUpgradeVersions: Versions{
+				DirectUpgradeVersions: Versions{
 					newVer("6.1.0"),
 					newVer("7.0.0"),
 				},
@@ -133,7 +133,7 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 			path: RuntimeUpgradePath{
 				From: semver.New("5.0.0"),
 				To:   upgradeRuntime,
-				directUpgradeVersions: Versions{
+				DirectUpgradeVersions: Versions{
 					newVer("6.1.0"),
 					newVer("7.0.0"),
 				},
@@ -145,11 +145,11 @@ func (s *Suite) TestVersionQueries(c *check.C) {
 			path: RuntimeUpgradePath{
 				From: semver.New("5.5.38"),
 				To:   upgradeRuntime,
-				directUpgradeVersions: Versions{
+				DirectUpgradeVersions: Versions{
 					newVer("6.1.0"),
 					newVer("7.0.0"),
 				},
-				upgradeViaVersions: map[semver.Version]Versions{
+				UpgradeViaVersions: map[semver.Version]Versions{
 					newVer("5.5.0"): {newVer("6.1.0")},
 				},
 			},

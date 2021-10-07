@@ -126,7 +126,7 @@ func (r RuntimeUpgradePath) Verify(m schema.Manifest) error {
 // SupportsDirectUpgrade returns true if a direct upgrade path from the
 // source version to the desired version is possible.
 func (r RuntimeUpgradePath) SupportsDirectUpgrade() bool {
-	upgradeVersions := r.directUpgradeVersions
+	upgradeVersions := r.DirectUpgradeVersions
 	if len(upgradeVersions) == 0 {
 		upgradeVersions = DirectUpgradeVersions
 	}
@@ -142,7 +142,7 @@ func (r RuntimeUpgradePath) SupportsDirectUpgrade() bool {
 // intermediate hops to upgrade from the source version.
 // Returns an empty slice when no upgrade path via intermediate versions is available.
 func (r RuntimeUpgradePath) SupportsUpgradeVia() Versions {
-	upgradeVersions := r.upgradeViaVersions
+	upgradeVersions := r.UpgradeViaVersions
 	if len(upgradeVersions) == 0 {
 		upgradeVersions = UpgradeViaVersions
 	}
@@ -163,10 +163,10 @@ type RuntimeUpgradePath struct {
 	To *semver.Version
 	// FieldLogger is used for logging.
 	logrus.FieldLogger
-	// directUpgradeVersions defines versions that can upgrade directly.
-	directUpgradeVersions Versions
-	// upgradeViaVersions defines versions that can upgrade with intermediate hops.
-	upgradeViaVersions map[semver.Version]Versions
+	// DirectUpgradeVersions defines versions that can upgrade directly.
+	DirectUpgradeVersions Versions
+	// UpgradeViaVersions defines versions that can upgrade with intermediate hops.
+	UpgradeViaVersions map[semver.Version]Versions
 }
 
 // Versions represents a list of semvers.
@@ -187,11 +187,11 @@ func (r *RuntimeUpgradePath) checkAndSetDefaults() error {
 	if r.From == nil || r.To == nil {
 		return trace.BadParameter("runtime versions are not set")
 	}
-	if len(r.directUpgradeVersions) == 0 {
-		r.directUpgradeVersions = DirectUpgradeVersions
+	if len(r.DirectUpgradeVersions) == 0 {
+		r.DirectUpgradeVersions = DirectUpgradeVersions
 	}
-	if len(r.upgradeViaVersions) == 0 {
-		r.upgradeViaVersions = UpgradeViaVersions
+	if len(r.UpgradeViaVersions) == 0 {
+		r.UpgradeViaVersions = UpgradeViaVersions
 	}
 	if r.FieldLogger == nil {
 		r.FieldLogger = logrus.WithFields(logrus.Fields{

@@ -26,7 +26,6 @@ import (
 	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/defaults"
-	"github.com/gravitational/gravity/lib/fsm"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/ops"
 	"github.com/gravitational/gravity/lib/schema"
@@ -90,7 +89,7 @@ func (r *phaseBuilder) initSteps(ctx context.Context) (err error) {
 		servers:        serverUpdates,
 		runtimeUpdates: runtimeAppUpdates,
 		etcd:           etcd,
-		gravity:        r.planTemplate.GravityPackage,
+		gravity:        r.gravityPackage,
 		openEBSEnabled: openEBSEnabled,
 		userConfig:     r.userConfig,
 		numParallel:    r.numParallel,
@@ -205,13 +204,13 @@ func (r phaseBuilder) intermediateConfigUpdates(
 	installedTeleport loc.Locator, updateTeleport *loc.Locator,
 	operator libphase.PackageRotator,
 ) (updates []storage.UpdateServer, err error) {
-	for _, server := range r.planTemplate.Servers {
+	for _, server := range r.planConfig.servers {
 		installedRuntime, err := installedRuntimeFunc(server)
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
 		secretsUpdate, err := operator.RotateSecrets(ops.RotateSecretsRequest{
-			Key:            fsm.ClusterKey(r.planTemplate),
+			Key:            r.clusterKey(),
 			Server:         server,
 			RuntimePackage: updateRuntime,
 			DryRun:         true,
@@ -230,7 +229,7 @@ func (r phaseBuilder) intermediateConfigUpdates(
 			},
 		}
 		configUpdate, err := operator.RotatePlanetConfig(ops.RotatePlanetConfigRequest{
-			Key:            (ops.SiteOperation)(r.operation).Key(),
+			Key:            (ops.SiteOperation)(*r.operation).Key(),
 			Server:         server,
 			Manifest:       installed,
 			RuntimePackage: updateRuntime,
@@ -245,7 +244,7 @@ func (r phaseBuilder) intermediateConfigUpdates(
 		}
 		if updateTeleport != nil {
 			_, nodeConfig, err := operator.RotateTeleportConfig(ops.RotateTeleportConfigRequest{
-				Key:             (ops.SiteOperation)(r.operation).Key(),
+				Key:             (ops.SiteOperation)(*r.operation).Key(),
 				Server:          server,
 				TeleportPackage: *updateTeleport,
 				DryRun:          true,
@@ -946,9 +945,18 @@ type runtimePackageGetterFunc func(storage.Server) (*loc.Locator, error)
 
 func (r phaseBuilder) isDirectUpgrade() bool {
 	return versions.RuntimeUpgradePath{
-		From: &r.installedRuntimeAppVersion,
-		To:   &r.updateRuntimeAppVersion,
+		From:                  &r.installedRuntimeAppVersion,
+		To:                    &r.updateRuntimeAppVersion,
+		DirectUpgradeVersions: r.directUpgradeVersions,
+		UpgradeViaVersions:    r.upgradeViaVersions,
 	}.SupportsDirectUpgrade()
+}
+
+func (r phaseBuilder) clusterKey() ops.SiteKey {
+	return ops.SiteKey{
+		AccountID:  r.planConfig.operation.AccountID,
+		SiteDomain: r.planConfig.operation.SiteDomain,
+	}
 }
 
 func (r phaseBuilder) shouldSkipIntermediateUpdate(v semver.Version) bool {
