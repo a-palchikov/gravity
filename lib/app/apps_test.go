@@ -52,8 +52,12 @@ func (s *AppUtilsSuite) TestUpdatedDependencies(c *C) {
 		Manifest: *updateManifest,
 	}
 
-	installedDeps := manifest.FilterDisabledDependencies(GetDirectApplicationDependencies(app))
-	updateDeps := updateManifest.FilterDisabledDependencies(GetDirectApplicationDependencies(updateApp))
+	installedDeps, err := GetDirectApplicationDependencies(app)
+	c.Assert(err, IsNil)
+	installedDeps = manifest.FilterDisabledDependencies(installedDeps)
+	updateDeps, err := GetDirectApplicationDependencies(updateApp)
+	c.Assert(err, IsNil)
+	updateDeps = updateManifest.FilterDisabledDependencies(updateDeps)
 	updates, err := loc.GetUpdatedDependencies(installedDeps, updateDeps)
 	c.Assert(err, IsNil)
 	c.Assert(updates, DeepEquals, []loc.Locator{

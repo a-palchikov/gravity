@@ -43,6 +43,7 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
+	"github.com/pborman/uuid"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
@@ -150,6 +151,8 @@ func InitOperationPlan(
 		roles:              roles,
 		trustedClusters:    trustedClusters,
 		installedApp:       *installedApp,
+		numParallel:        NumParallel(),
+		newID:              newUUID,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -217,9 +220,18 @@ func newOperationPlan(ctx context.Context, config planConfig) (*storage.Operatio
 		return nil, trace.Wrap(err)
 	}
 
+	installedDeps, err := app.GetDirectApplicationDependencies(*installedApp)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	updateDeps, err := app.GetDirectApplicationDependencies(*updateApp)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
 	appUpdates, err := loc.GetUpdatedDependencies(
-		app.GetDirectApplicationDependencies(*installedApp),
-		app.GetDirectApplicationDependencies(*updateApp))
+		installedDeps,
+		updateDeps)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -308,6 +320,8 @@ type planConfig struct {
 	upgradeViaVersions map[semver.Version]versions.Versions
 	// numParallel limits the number of concurrent sub-phase invocations
 	numParallel int
+	// newID generates new changeset IDs
+	newID idGen
 }
 
 // configUpdates computes the configuration updates for the specified list of servers
@@ -538,8 +552,16 @@ func reorderServers(servers []storage.UpdateServer, server storage.Server) (resu
 }
 
 func runtimeUpdates(installedRuntime, updateRuntime, updateApp app.Application) ([]loc.Locator, error) {
-	installedDeps := updateApp.Manifest.FilterDisabledDependencies(app.GetDirectApplicationDependencies(installedRuntime))
-	updateDeps := updateApp.Manifest.FilterDisabledDependencies(app.GetDirectApplicationDependencies(updateRuntime))
+	installedDeps, err := app.GetDirectApplicationDependencies(installedRuntime)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	updateDeps, err := app.GetDirectApplicationDependencies(updateRuntime)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	installedDeps = updateApp.Manifest.FilterDisabledDependencies(installedDeps)
+	updateDeps = updateApp.Manifest.FilterDisabledDependencies(updateDeps)
 	runtimeUpdates, err := loc.GetUpdatedDependencies(installedDeps, updateDeps)
 	if err != nil && !trace.IsNotFound(err) {
 		return nil, trace.Wrap(err)
@@ -557,3 +579,10 @@ type runtimeConfig struct {
 	// DNSPort specifies the configured DNS port
 	DNSPort string `json:"PLANET_DNS_PORT"`
 }
+
+func newUUID() string {
+	return uuid.New()
+}
+
+// idGen generates new unique IDs
+type idGen func() string

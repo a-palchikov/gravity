@@ -174,6 +174,7 @@ func (s *PlanSuite) setupWithRuntimeUpdate(servers []storage.Server, c *check.C)
 				newVer("1.0.0"): {newVer("2.0.0")},
 			},
 			numParallel: numParallelPhases,
+			newID:       testIDs(1),
 		},
 		gravityPackage: updateGravityPackage.Loc,
 		etcdVersion: etcdVersion{
@@ -287,6 +288,7 @@ func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
 		newMaster("node-2"),
 		newWorker("node-3"),
 	}
+	// TODO(dima): init idGen inside the test
 	params := s.setupWithRuntimeUpdate(servers, c)
 
 	// exercise
@@ -304,7 +306,7 @@ func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
 		ClusterName:        s.operation.SiteDomain,
 		Servers:            servers,
 		DNSConfig:          storage.DefaultDNSConfig,
-		GravityPackage:     loc.MustParseLocator("gravitational.io/gravity:3.0.0"),
+		GravityPackage:     params.gravityPackage,
 		OfflineCoordinator: params.planConfig.leadMaster,
 		Phases: []storage.OperationPhase{
 			params.init(rearrangedServers),
@@ -312,8 +314,8 @@ func (s *PlanSuite) TestPlanWithRuntimeAppsUpdate(c *check.C) {
 			params.preUpdate("/init", "/checks"),
 			params.bootstrap(rearrangedServers, params.gravityPackage, "/checks", "/pre-update"),
 			params.coreDNS("/bootstrap"),
-			params.masters(leadMaster, updates[0:1], params.gravityPackage, "id", "/coredns"),
-			params.nodes(updates[2:], leadMaster.Server, params.gravityPackage, "id", "/masters"),
+			params.masters(leadMaster, updates[0:1], params.gravityPackage, "1", "/coredns"),
+			params.nodes(updates[2:], leadMaster.Server, params.gravityPackage, "1", "/masters"),
 			params.etcd(leadMaster.Server, updates[0:1], params.etcdVersion),
 			params.config("/etcd"),
 			params.runtime(params.runtimeUpdates, "/config"),
@@ -1800,6 +1802,14 @@ func newRuntimePackageWithEtcd(loc loc.Locator, etcdVersion string) apptest.Pack
 	]
 }`, etcdVersion)),
 		},
+	}
+}
+
+func testIDs(id int) idGen {
+	return func() string {
+		newID := id
+		id++
+		return fmt.Sprint(newID)
 	}
 }
 

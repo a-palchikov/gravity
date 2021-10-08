@@ -561,7 +561,10 @@ func (b *PlanBuilder) AddExportPhase(plan *storage.OperationPlan) {
 
 // AddRuntimePhase appends system applications installation phase to the provided plan
 func (b *PlanBuilder) AddRuntimePhase(plan *storage.OperationPlan) error {
-	runtimeLocators := app.GetDirectApplicationDependencies(b.Runtime)
+	runtimeLocators, err := app.GetDirectApplicationDependencies(b.Runtime)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	var runtimePhases []storage.OperationPhase
 	for i, locator := range runtimeLocators {
 		if b.skipDependency(locator) {
@@ -592,7 +595,10 @@ func (b *PlanBuilder) AddRuntimePhase(plan *storage.OperationPlan) error {
 
 // AddApplicationPhase appends user application installation phase to the provided plan
 func (b *PlanBuilder) AddApplicationPhase(plan *storage.OperationPlan) error {
-	applicationLocators := app.GetDirectApplicationDependencies(b.Application)
+	applicationLocators, err := app.GetDirectApplicationDependencies(b.Application)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 	var applicationPhases []storage.OperationPhase
 	for i, locator := range applicationLocators {
 		applicationPhases = append(applicationPhases, storage.OperationPhase{

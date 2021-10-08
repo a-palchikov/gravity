@@ -37,7 +37,6 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
-	"github.com/pborman/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -85,7 +84,7 @@ func (r *phaseBuilder) initSteps(ctx context.Context) (err error) {
 	etcd := getEtcdUpgradePath(*installedOrUpgradedEtcdVersion, *updateEtcdVersion)
 	// check if OpenEBS integration has been enabled in the new application
 	openEBSEnabled := !r.installedApp.Manifest.OpenEBSEnabled() && r.updateApp.Manifest.OpenEBSEnabled()
-	r.targetStep = newTargetUpdateStep(updateStep{
+	r.targetStep = r.newTargetUpdateStep(updateStep{
 		servers:        serverUpdates,
 		runtimeUpdates: runtimeAppUpdates,
 		etcd:           etcd,
@@ -192,7 +191,7 @@ func (r phaseBuilder) newIntermediateStep(v schema.IntermediateVersion) (*interm
 		}
 	}
 	return &intermediateUpdateStep{
-		updateStep:        newUpdateStep(step),
+		updateStep:        r.newUpdateStep(step),
 		runtimeAppVersion: v.Version,
 	}, nil
 }
@@ -354,8 +353,8 @@ type intermediateUpdateStep struct {
 	runtimeAppVersion semver.Version
 }
 
-func newTargetUpdateStep(step updateStep) targetUpdateStep {
-	return targetUpdateStep{updateStep: newUpdateStep(step)}
+func (r phaseBuilder) newTargetUpdateStep(step updateStep) targetUpdateStep {
+	return targetUpdateStep{updateStep: r.newUpdateStep(step)}
 }
 
 func (r targetUpdateStep) build(leadMaster storage.Server, installedApp, updateApp loc.Locator) *builder.Phase {
@@ -711,9 +710,9 @@ func (r updateStep) etcdRestartPhase(server storage.Server) *builder.Phase {
 	})
 }
 
-func newUpdateStep(step updateStep) updateStep {
+func (r phaseBuilder) newUpdateStep(step updateStep) updateStep {
 	if step.changesetID == "" {
-		step.changesetID = uuid.New()
+		step.changesetID = r.newID()
 	}
 	return step
 }
