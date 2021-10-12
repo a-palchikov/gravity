@@ -138,9 +138,7 @@ func (r *GetDependenciesRequest) checkAndSetDefaults() error {
 
 func (r GetDependenciesRequest) getDependencies(app Application, state *state) error {
 	logger := r.WithField("app", app.Package)
-	packageDeps := loc.Deduplicate(app.Manifest.Dependencies.GetPackages())
-	packageDeps = append(packageDeps, app.Manifest.NodeProfiles.RuntimePackages()...)
-	logger.WithField("pkgs", packageDeps).Debug("Package dependencies.")
+	packageDeps := loc.Deduplicate(app.Manifest.PackageDependencies())
 	for _, dependency := range packageDeps {
 		if state.hasPackage(dependency) {
 			continue
@@ -151,14 +149,14 @@ func (r GetDependenciesRequest) getDependencies(app Application, state *state) e
 		}
 		state.addPackage(*envelope)
 	}
+	logger.WithField("pkgs", packageDeps).Info("Accumulated package dependencies.")
 	// collect application dependencies, including those of the base application
 	var appDeps []loc.Locator
 	baseApp := app.Manifest.Base()
 	if baseApp != nil {
 		appDeps = append(appDeps, *baseApp)
 	}
-	appDeps = append(appDeps, app.Manifest.Dependencies.GetApps()...)
-	logger.WithField("apps", appDeps).Debug("App dependencies.")
+	appDeps = loc.Deduplicate(append(appDeps, app.Manifest.AppDependencies()...))
 	for _, dependency := range appDeps {
 		if state.hasPackage(dependency) {
 			continue
@@ -172,6 +170,7 @@ func (r GetDependenciesRequest) getDependencies(app Application, state *state) e
 		}
 		state.addApp(*app)
 	}
+	logger.WithField("apps", appDeps).Debug("Accumulated app dependencies.")
 	// Fetch and persist the default runtime package.
 	// If the top-level application overwrites the runtime package,
 	// only the top-level runtime package is pulled

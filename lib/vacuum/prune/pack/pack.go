@@ -128,7 +128,7 @@ func (r *Cleanup) Prune(context.Context) error {
 func (r *Cleanup) mark() (required packageMap, err error) {
 	dependencies := append(r.config.App.Manifest.AllPackageDependencies(),
 		r.config.App.Manifest.Dependencies.GetApps()...)
-	dependencies = append(dependencies, r.config.App.Locator)
+	dependencies = loc.Deduplicate(append(dependencies, r.config.App.Locator))
 	if base := r.config.App.Manifest.Base(); base != nil {
 		dependencies = append(dependencies, *base)
 	}

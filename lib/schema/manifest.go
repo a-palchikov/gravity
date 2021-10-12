@@ -385,18 +385,32 @@ func (m Manifest) AllPackageDependencies() (deps []loc.Locator) {
 	if m.SystemOptions != nil && m.SystemOptions.Dependencies.Runtime != nil {
 		deps = append(deps, m.SystemOptions.Dependencies.Runtime.Locator)
 	}
-	deps = append(deps, m.NodeProfiles.RuntimePackages()...)
-	return loc.Deduplicate(append(m.Dependencies.GetPackages(), deps...))
+	return append(m.PackageDependencies(), deps...)
 }
 
 // PackageDependencies returns the list of package dependencies
-// for the specified profile
-func (m Manifest) PackageDependencies(profile string) (deps []loc.Locator, err error) {
-	runtimePackage, err := m.RuntimePackageForProfile(profile)
-	if err != nil {
-		return nil, trace.Wrap(err)
+// excluding the direct runtime (planet) package
+func (m Manifest) PackageDependencies() (deps []loc.Locator) {
+	deps = m.Dependencies.GetPackages(SkipPlanetPackage)
+	if m.SystemOptions != nil {
+		for _, v := range m.SystemOptions.Dependencies.IntermediateVersions {
+			deps = append(deps, v.Dependencies.GetPackages()...)
+		}
 	}
-	return loc.Deduplicate(append(m.Dependencies.GetPackages(), *runtimePackage)), nil
+	return append(deps, m.NodeProfiles.RuntimePackages()...)
+}
+
+// AppDependencies returns the list of application package dependencies
+func (m Manifest) AppDependencies() (deps []loc.Locator) {
+	deps = m.Dependencies.GetApps()
+	if m.SystemOptions != nil {
+		for _, v := range m.SystemOptions.Dependencies.IntermediateVersions {
+			deps = append(deps, v.Dependencies.GetApps()...)
+		}
+	}
+	return loc.Deduplicate(
+		append(deps, m.NodeProfiles.RuntimePackages()...),
+	)
 }
 
 // DefaultProvider returns the default cloud provider or an empty string.
@@ -554,27 +568,43 @@ func (d Dependencies) ByName(names ...string) (*loc.Locator, error) {
 	return nil, trace.NotFound("dependencies %q are not defined in the manifest", names)
 }
 
-// GetPackages returns a list of all package dependencies except the runtime
-// package which is described in systemOptions
-func (d Dependencies) GetPackages() []loc.Locator {
+// GetPackages returns a list of all package dependencies.
+// sels specifies the list of package selector options - if a selector
+// returns true for a package, the package is accumulated.
+// Empty sels selects all packages
+func (d Dependencies) GetPackages(sels ...PackageSelector) []loc.Locator {
+	if len(sels) == 0 {
+		sels = append(sels, func(loc.Locator) bool { return true })
+	}
 	packages := make([]loc.Locator, 0, len(d.Packages))
 	for _, dep := range d.Packages {
-		if loc.IsPlanetPackage(dep.Locator) {
-			continue
+		for _, sel := range sels {
+			if sel(dep.Locator) {
+				packages = append(packages, dep.Locator)
+				continue
+			}
 		}
-		packages = append(packages, dep.Locator)
 	}
 	return packages
 }
 
-// GetApps returns a list of all application dependencies
+// SkipPlanetPackage is a package selector that skips the
+// runtime (planet) package
+func SkipPlanetPackage(pkg loc.Locator) bool {
+	return !loc.IsPlanetPackage(pkg)
+}
+
+// GetApps returns a list of application dependencies
 func (d Dependencies) GetApps() []loc.Locator {
 	apps := make([]loc.Locator, 0, len(d.Apps))
 	for _, app := range d.Apps {
 		apps = append(apps, app.Locator)
 	}
-	return loc.Deduplicate(apps)
+	return apps
 }
+
+// PackageSelector is a functional option to select a package
+type PackageSelector func(loc.Locator) bool
 
 // Dependency represents a package or app dependency
 type Dependency struct {

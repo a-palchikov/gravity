@@ -182,7 +182,7 @@ func (r phaseBuilder) newIntermediateStep(v schema.IntermediateVersion) (*interm
 		}
 		step.apps = append(step.apps, *app)
 	}
-	runtimeApp, err := r.apps.GetApp(loc.Runtime.WithVersion(&v.Version))
+	runtimeApp, err := r.apps.GetApp(loc.Runtime.WithVersion(v.Version))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}

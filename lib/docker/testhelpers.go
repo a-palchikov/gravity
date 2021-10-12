@@ -27,25 +27,49 @@ import (
 	"gopkg.in/check.v1"
 )
 
+// TestRequiresDocker checks whether the host has docker available and skips
+// the current test otherwise
+func TestRequiresDocker(c *check.C) *dockerapi.Client {
+	client, err := NewClientFromEnv()
+	if err != nil {
+		c.Skip(fmt.Sprint("This test requires docker:", err))
+	}
+	return client
+}
+
 // GenerateTestDockerImage generates a test docker image in the specified repository and with the given
 // tag
 func GenerateTestDockerImage(client *dockerapi.Client, repoName, tag string, c *check.C) loc.DockerImage {
-	image := loc.DockerImage{
-		Repository: repoName,
-		Tag:        tag,
+	const dockerFile = "FROM scratch\nCOPY version.txt .\n"
+	image := TestImage{
+		DockerImage: loc.DockerImage{
+			Repository: repoName, Tag: tag,
+		},
+		Items: []*archive.Item{
+			archive.ItemFromStringMode("version.txt", tag, 0666),
+			archive.ItemFromStringMode("Dockerfile", dockerFile, 0666),
+		},
 	}
-	imageName := image.String()
-	files := make([]*archive.Item, 0)
-	files = append(files, archive.ItemFromStringMode("version.txt", tag, 0666))
-	dockerFile := "FROM scratch\nCOPY version.txt .\n"
-	files = append(files, archive.ItemFromStringMode("Dockerfile", dockerFile, 0666))
-	r := archive.MustCreateMemArchive(files)
+	return GenerateTestDockerImageFromSpec(client, image, c)
+}
+
+// GenerateTestDockerImageFromSpec generates a test docker image based on the
+// provided spec
+func GenerateTestDockerImageFromSpec(client *dockerapi.Client, spec TestImage, c *check.C) loc.DockerImage {
+	imageName := spec.String()
+	r := archive.MustCreateMemArchive(spec.Items)
 	c.Assert(client.BuildImage(dockerapi.BuildImageOptions{
 		Name:         imageName,
 		InputStream:  r,
 		OutputStream: os.Stdout,
 	}), check.IsNil)
-	return image
+	return spec.DockerImage
+}
+
+// TestImage describes a docker image to create
+type TestImage struct {
+	loc.DockerImage
+	Items []*archive.Item
 }
 
 // GenerateTestDockerImages generates the requested number of docker images in the specified repository
@@ -84,9 +108,9 @@ func (r *TestRegistry) Close() error {
 	return r.r.Close()
 }
 
-// Addr returns the address the regostry is serving on
+// Addr returns the address the registry is serving on
 func (r *TestRegistry) Addr() string {
-	return r.info.Address
+	return r.r.Addr()
 }
 
 // Push pushes the specified images to the underlying registry

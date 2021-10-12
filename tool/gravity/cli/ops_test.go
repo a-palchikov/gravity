@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/app/service"
@@ -35,9 +36,11 @@ import (
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
 	packtest "github.com/gravitational/gravity/lib/pack/test"
+	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/trace"
 
+	"github.com/coreos/go-semver/semver"
 	dockerapi "github.com/fsouza/go-dockerclient"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/check.v1"
@@ -48,31 +51,60 @@ type OpsSuite struct{}
 var _ = check.Suite(&OpsSuite{})
 
 func (*OpsSuite) TestUploadsUpdate(c *check.C) {
-	client, err := docker.NewClientFromEnv()
-	if err != nil {
-		c.Skip(fmt.Sprint("This test requires docker: ", err))
-	}
+	client := docker.TestRequiresDocker(c)
 
 	// setup
 	from, to := service.NewTestServices(c.MkDir(), c), service.NewTestServices(c.MkDir(), c)
-	depPackageLoc := loc.MustParseLocator("example.com/package:1.0.0")
-	depAppLoc := loc.MustParseLocator("gravitational.io/dep-app:1.0.0")
-	appLoc := loc.MustParseLocator("gravitational.io/app:1.0.0")
+	runtimeAppLoc, runtimeLoc := newLoc("kubernetes:2.0.0"), newLoc("planet:2.0.0")
+	runtimeAppVer := mustVer(runtimeAppLoc.Version)
+	depPackageLoc := newLoc("package:1.0.0")
+	depAppLoc, depApp2Loc := newLoc("dep-app:1.0.0"), newLoc("dep-app-2:1.0.0")
+	depApp2 := apptest.SystemApplication(depApp2Loc).Build()
+	appLoc := newLoc("app:1.0.0")
+	teleportLoc := newLoc("teleport:1.0.0")
+	intermediateRuntimeAppLoc, intermediateRuntimeLoc := newLoc("kubernetes:1.0.0"), newLoc("planet:1.1.0")
+	intermediateRuntimeApp := apptest.RuntimeApplication(
+		intermediateRuntimeAppLoc, intermediateRuntimeLoc).
+		WithSchemaPackageDependencies(teleportLoc).
+		WithAppDependencies(depApp2).
+		Build()
+	apptest.CreateApplication(apptest.AppRequest{
+		App:      intermediateRuntimeApp,
+		Apps:     from.Apps,
+		Packages: from.Packages,
+	}, c)
+	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, runtimeLoc).
+		Build()
 	depApp := apptest.SystemApplication(depAppLoc).
 		WithSchemaPackageDependencies(depPackageLoc).
 		WithItems(generateDockerImage(client, loc.DockerImage{Repository: "depimage", Tag: "0.0.1"}, c)...).
 		Build()
-	clusterApp := apptest.DefaultClusterApplication(appLoc).
+	clusterApp := apptest.ClusterApplication(appLoc, runtimeApp).
 		WithAppDependencies(depApp).
 		WithItems(generateDockerImage(client, loc.DockerImage{Repository: "testimage", Tag: "1.0.0"}, c)...).
 		Build()
+	clusterApp.Manifest.SystemOptions.Dependencies.IntermediateVersions = []schema.IntermediateVersion{
+		{
+			Version: mustVer("3.0.0"),
+			Dependencies: schema.Dependencies{
+				Packages: []schema.Dependency{
+					{Locator: intermediateRuntimeLoc},
+					{Locator: teleportLoc},
+				},
+				Apps: []schema.Dependency{
+					{Locator: depApp2Loc},
+				},
+			},
+		},
+	}
+
 	app, _ := apptest.CreateApplication(apptest.AppRequest{
 		App:      clusterApp,
 		Apps:     from.Apps,
 		Packages: from.Packages,
 	}, c)
 
-	logger := logrus.WithField("test", "TestUploadsUpdate")
+	logger := utils.NewTestLogger(c)
 	synchronizer := docker.NewSynchronizer(logger, client, utils.DiscardProgress)
 	registry := docker.NewTestRegistry(c.MkDir(), synchronizer, c)
 	imageService, err := docker.NewImageService(docker.RegistryConnectionRequest{
@@ -94,7 +126,7 @@ func (*OpsSuite) TestUploadsUpdate(c *check.C) {
 	}
 
 	// exercise
-	err = uploadApplicationUpdate(context.TODO(), puller, syncer, []docker.ImageService{imageService}, *app)
+	err = uploadApplicationUpdate(context.TODO(), puller, syncer, []docker.ImageService{imageService}, *app, runtimeAppVer)
 
 	// verify
 	c.Assert(err, check.IsNil)
@@ -103,8 +135,11 @@ func (*OpsSuite) TestUploadsUpdate(c *check.C) {
 		depAppLoc,
 		depPackageLoc,
 		appLoc,
-		apptest.RuntimeApplicationLoc,
-		apptest.RuntimePackageLoc,
+		runtimeAppLoc,
+		runtimeLoc,
+		intermediateRuntimeLoc,
+		depApp2Loc,
+		teleportLoc,
 	}, c)
 }
 
@@ -153,4 +188,17 @@ func snapshotRegistryDirectory(root string, c *check.C) (result []*archive.Item)
 	})
 	c.Assert(err, check.IsNil)
 	return result
+}
+
+func newLoc(nameVersion string) loc.Locator {
+	parts := strings.Split(nameVersion, ":")
+	return loc.Locator{
+		Repository: defaults.SystemAccountOrg,
+		Name:       parts[0],
+		Version:    parts[1],
+	}
+}
+
+func mustVer(v string) semver.Version {
+	return *semver.New(v)
 }

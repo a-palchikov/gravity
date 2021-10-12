@@ -30,6 +30,7 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 	"github.com/gravitational/version"
+	"github.com/sirupsen/logrus"
 )
 
 // checkOutputPath validates the image output path.
@@ -54,7 +55,7 @@ To resolve the issue you can do one of the following:
 }
 
 // checkBuildEnv validates the tele build environment.
-func checkBuildEnv() error {
+func checkBuildEnv(logger logrus.FieldLogger) error {
 	client, err := docker.NewClientFromEnv()
 	if err != nil {
 		return trace.Wrap(err)
@@ -67,14 +68,14 @@ To resolve the issue:
 
 	_, err = client.Version()
 	if err != nil {
-		log.WithError(err).Error("failed to validate docker client connectivity")
+		logger.WithError(err).Error("failed to validate docker client connectivity")
 		return dockerErr
 	}
 
 	var out bytes.Buffer
 	err = utils.Exec(exec.Command("docker", "version"), &out)
 	if err != nil {
-		log.WithError(err).Errorf("failed to validate docker binary, output: %q", out.String())
+		logger.WithError(err).Errorf("failed to validate docker binary, output: %q", out.String())
 		return dockerErr
 	}
 
@@ -83,7 +84,7 @@ To resolve the issue:
 
 // checkVersion makes sure that the provided runtime version is compatible
 // with the version of this tele binary.
-func checkVersion(runtimeVersion *semver.Version) error {
+func checkVersion(runtimeVersion *semver.Version, logger logrus.FieldLogger) error {
 	teleVersion, err := semver.NewVersion(version.Get().Version)
 	if err != nil {
 		return trace.Wrap(err, "failed to determine tele version")
@@ -97,7 +98,7 @@ To resolve the issue you can do one of the following:
   * Do not specify "baseImage" in the manifest file, in which case tele will automatically pick compatible version.`,
 			teleVersion, runtimeVersion)
 	}
-	log.WithField("tele", teleVersion).WithField("runtime", runtimeVersion).
+	logger.WithField("tele", teleVersion).WithField("runtime", runtimeVersion).
 		Debug("Version check passed.")
 	return nil
 }
@@ -114,9 +115,9 @@ func versionsCompatible(teleVer, runtimeVer semver.Version) bool {
 		!teleVer.LessThan(runtimeVer)
 }
 
-// ensureCacheDir makes sure that the default local cache directory for
+// EnsureCacheDir makes sure that the default local cache directory for
 // the provided Gravity Hub exists.
-func ensureCacheDir(hubURL string) (dir string, err error) {
+func EnsureCacheDir(hubURL string) (dir string, err error) {
 	u, err := url.Parse(hubURL)
 	if err != nil {
 		return "", trace.Wrap(err)

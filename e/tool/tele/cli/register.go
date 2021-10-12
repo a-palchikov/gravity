@@ -42,7 +42,8 @@ func RegisterCommands(app *kingpin.Application) Application {
 	t.BuildCmd.RemoteSupportToken = t.BuildCmd.Flag("remote-support-token", "Token for connecting to the Gravity Hub.").String()
 	t.BuildCmd.CACert = t.BuildCmd.Flag("ca-cert", "Path to the CA certificate file to use when building a cluster image.").String()
 	t.BuildCmd.EncryptionKey = t.BuildCmd.Flag("encryption-key", "Encryption key to encrypt cluster image packages with.").String()
-	t.BuildCmd.Repository = t.BuildCmd.Flag("repository", "[DEPRECATED, replaced by --hub] Optional address of Gravity Hub to download dependencies from.").Hidden().String()
+	// TODO(r0mant): This flag is DEPRECATED and replaced by --hub.
+	t.BuildCmd.Flag("repository", "[DEPRECATED, replaced by --hub] Optional address of Gravity Hub to download dependencies from.").Hidden().StringVar(t.Hub)
 
 	t.LoginCmd.CmdClause = app.Command("login", "[DEPRECATED. Use tsh login.] Log into Gravity Hub.").Hidden()
 	t.LoginCmd.Cluster = t.LoginCmd.Arg("cluster", "Cluster name to log into.").String()

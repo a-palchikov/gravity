@@ -26,7 +26,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/gravitational/gravity/lib/app"
+	libapp "github.com/gravitational/gravity/lib/app"
 	"github.com/gravitational/gravity/lib/app/service"
 	blobfs "github.com/gravitational/gravity/lib/blob/fs"
 	"github.com/gravitational/gravity/lib/constants"
@@ -34,7 +34,6 @@ import (
 	"github.com/gravitational/gravity/lib/docker"
 	"github.com/gravitational/gravity/lib/loc"
 	"github.com/gravitational/gravity/lib/localenv"
-	"github.com/gravitational/gravity/lib/localenv/credentials"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/pack/layerpack"
 	"github.com/gravitational/gravity/lib/pack/localpack"
@@ -51,8 +50,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var log = logrus.WithField(trace.Component, "builder")
-
 // Config is the builder configuration
 type Config struct {
 	// StateDir is the configured builder state directory
@@ -67,64 +64,56 @@ type Config struct {
 	Parallel int
 	// Generator is used to generate installer
 	Generator Generator
-	// NewSyncer is used to initialize package cache syncer for the builder
-	NewSyncer NewSyncerFunc
-	// GetRepository is a function that returns package source repository
-	GetRepository GetRepositoryFunc
-	// CredentialsService provides access to user credentials
-	CredentialsService credentials.Service
-	// Credentials is the credentials set on the CLI
-	Credentials *credentials.Credentials
-	// Level is the level at which the progress should be reported
-	Level utils.ProgressLevel
+	// Syncer specifies the package syncer implementation
+	Syncer Syncer
+	// Env defines the build environment
+	Env *localenv.LocalEnvironment
 	// Progress allows builder to report build progress
 	utils.Progress
+	// UpgradeVia lists intermediate runtime versions to embed
+	UpgradeVia []string
+	// Logger specifies the logger to use
+	Logger logrus.FieldLogger
 }
 
 // CheckAndSetDefaults validates builder config and fills in defaults
 func (c *Config) CheckAndSetDefaults() error {
+	if c.Env == nil {
+		return trace.BadParameter("builder.Config.Env is required")
+	}
+	if c.Syncer == nil {
+		return trace.BadParameter("builder.Config.Syncer is required")
+	}
 	if c.Parallel == 0 {
 		c.Parallel = runtime.NumCPU()
 	}
 	if c.Generator == nil {
 		c.Generator = &generator{}
 	}
-	if c.NewSyncer == nil {
-		c.NewSyncer = NewSyncer
-	}
-	if c.GetRepository == nil {
-		c.GetRepository = getRepository
-	}
-	var err error
-	if c.CredentialsService == nil {
-		c.CredentialsService, err = credentials.New(credentials.Config{
-			LocalKeyStoreDir: c.StateDir,
-			Credentials:      c.Credentials,
-		})
-		if err != nil {
-			return trace.Wrap(err)
-		}
-	}
 	if c.Progress == nil {
-		c.Progress = utils.NewProgressWithConfig(context.TODO(), "Build",
-			utils.ProgressConfig{
-				Level:       c.Level,
-				StepPrinter: utils.TimestampedStepPrinter,
-			})
+		c.Progress = utils.DiscardProgress
+	}
+	if c.Logger == nil {
+		c.Logger = logrus.WithField(trace.Component, "builder")
 	}
 	return nil
 }
 
 // newEngine creates a new builder engine.
 func newEngine(config Config) (*Engine, error) {
-	if err := checkBuildEnv(); err != nil {
-		return nil, trace.Wrap(err)
-	}
 	if err := config.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
+	if err := checkBuildEnv(config.Logger); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	runtimeVersions, err := parseVersions(config.UpgradeVia)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	b := &Engine{
-		Config: config,
+		Config:                      config,
+		intermediateRuntimeVersions: runtimeVersions,
 	}
 	if err := b.initServices(); err != nil {
 		b.Close()
@@ -138,8 +127,6 @@ func newEngine(config Config) (*Engine, error) {
 type Engine struct {
 	// Config is the builder Engine configuration.
 	Config
-	// Env is the local build environment.
-	Env *localenv.LocalEnvironment
 	// Dir is the directory where build-related data is stored.
 	Dir string
 	// Backend is the local backend.
@@ -149,7 +136,9 @@ type Engine struct {
 	// as a 'read-write' layer.
 	Packages pack.PackageService
 	// Apps is the application service based on the layered package service.
-	Apps app.Applications
+	Apps libapp.Applications
+	// intermediateRuntimeVersions lists intermediate runtime versions to embed in the resulting installer
+	intermediateRuntimeVersions []semver.Version
 }
 
 // SelectRuntime picks an appropriate base image version for the cluster
@@ -167,7 +156,7 @@ func (b *Engine) SelectRuntime(manifest *schema.Manifest) (*semver.Version, erro
 	}
 	// If runtime version is explicitly set in the manifest, use it.
 	if runtime.Version != loc.LatestVersion {
-		log.WithField("version", runtime.Version).Info("Using pinned runtime version.")
+		b.Logger.WithField("version", runtime.Version).Info("Using pinned runtime version.")
 		b.PrintSubStep("Will use base image version %s set in manifest", runtime.Version)
 		return semver.NewVersion(runtime.Version)
 	}
@@ -177,43 +166,21 @@ func (b *Engine) SelectRuntime(manifest *schema.Manifest) (*semver.Version, erro
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	log.WithField("version", teleVersion).Info("Selected runtime version based on tele version.")
+	b.Logger.WithField("version", teleVersion).Info("Selected runtime version based on tele version.")
 	b.PrintSubStep("Will use base image version %s", teleVersion)
 	return teleVersion, nil
 }
 
 // SyncPackageCache ensures that all system dependencies are present in
-// the local cache directory
-func (b *Engine) SyncPackageCache(ctx context.Context, manifest *schema.Manifest, runtimeVersion *semver.Version) error {
-	apps, err := b.Env.AppServiceLocal(localenv.AppConfig{ExcludeDeps: app.AppsToExclude(*manifest)})
+// the local cache directory for the specified application and the underlying list of intermediate runtime versions
+func (b *Engine) SyncPackageCache(ctx context.Context, app libapp.Application) error {
+	apps, err := b.Env.AppServiceLocal(localenv.AppConfig{ExcludeDeps: libapp.AppsToExclude(app.Manifest)})
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	// see if all required packages/apps are already present in the local cache
-	manifest.SetBase(loc.Runtime.WithVersion(runtimeVersion))
-	err = app.VerifyDependencies(app.Application{
-		Manifest: *manifest,
-		Package:  manifest.Locator(),
-	}, apps, b.Env.Packages)
-	if err != nil && !trace.IsNotFound(err) {
-		return trace.Wrap(err)
-	}
-	if err == nil {
-		log.Info("Local package cache is up-to-date.")
-		b.NextStep("Local package cache is up-to-date")
-		return nil
-	}
-	repository, err := b.GetRepository(b)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	log.Infof("Synchronizing package cache with %v.", repository)
-	b.NextStep("Downloading dependencies from %v", repository)
-	syncer, err := b.NewSyncer(b)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	return syncer.Sync(ctx, b, manifest, runtimeVersion)
+	b.Logger.Infof("Synchronizing package cache with %v.", b.Repository)
+	b.NextStep("Downloading dependencies from %v", b.Repository)
+	return b.Syncer.Sync(ctx, b, app, apps, b.intermediateRuntimeVersions)
 }
 
 // VendorRequest combines vendoring parameters.
@@ -269,14 +236,14 @@ func (b *Engine) Vendor(ctx context.Context, req VendorRequest) (io.ReadCloser, 
 
 // CreateApplication creates a Gravity application from the provided
 // data in the local database
-func (b *Engine) CreateApplication(data io.ReadCloser) (*app.Application, error) {
-	progressC := make(chan *app.ProgressEntry)
+func (b *Engine) CreateApplication(data io.ReadCloser) (*libapp.Application, error) {
+	progressC := make(chan *libapp.ProgressEntry)
 	errorC := make(chan error, 1)
 	err := b.Packages.UpsertRepository(defaults.SystemAccountOrg, time.Time{})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	op, err := b.Apps.CreateImportOperation(&app.ImportRequest{
+	op, err := b.Apps.CreateImportOperation(&libapp.ImportRequest{
 		Source:    data,
 		ProgressC: progressC,
 		ErrorC:    errorC,
@@ -296,8 +263,17 @@ func (b *Engine) CreateApplication(data io.ReadCloser) (*app.Application, error)
 
 // GenerateInstaller generates an installer tarball for the specified
 // application and returns its data as a stream
-func (b *Engine) GenerateInstaller(manifest *schema.Manifest, application app.Application) (io.ReadCloser, error) {
-	return b.Generator.Generate(b, manifest, application)
+func (b *Engine) GenerateInstaller(manifest schema.Manifest, application libapp.Application) (io.ReadCloser, error) {
+	dependencies, err := b.collectUpgradeDependencies()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	req, err := b.Generator.NewInstallerRequest(b, manifest, application)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	req.AdditionalDependencies = *dependencies
+	return b.Apps.GetAppInstaller(*req)
 }
 
 // WriteInstaller writes the provided installer tarball data to disk
@@ -312,14 +288,15 @@ func (b *Engine) WriteInstaller(data io.ReadCloser, outPath string) error {
 
 // initServices initializes the builder backend, package and apps services
 func (b *Engine) initServices() (err error) {
-	b.Env, err = b.makeBuildEnv()
-	if err != nil {
-		return trace.Wrap(err)
-	}
 	b.Dir, err = ioutil.TempDir("", "build")
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(b.Dir)
+		}
+	}()
 	b.Backend, err = keyval.NewBolt(keyval.BoltConfig{
 		Path: filepath.Join(b.Dir, defaults.GravityDBFile),
 	})
@@ -348,47 +325,48 @@ func (b *Engine) initServices() (err error) {
 	return nil
 }
 
-// makeBuildEnv creates a new local build environment instance
-func (b *Engine) makeBuildEnv() (*localenv.LocalEnvironment, error) {
-	// if state directory was specified explicitly, it overrides
-	// both cache directory and config directory as it's used as
-	// a special case only for building from local packages
-	if b.StateDir != "" {
-		log.Infof("Using package cache from %v.", b.StateDir)
-		return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
-			StateDir:         b.StateDir,
-			LocalKeyStoreDir: b.StateDir,
-			Insecure:         b.Insecure,
-			Credentials:      b.Credentials,
-		})
-	}
-	// otherwise use default locations for cache / key store
-	repository, err := b.GetRepository(b)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	cacheDir, err := ensureCacheDir(repository)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	log.Infof("Using package cache from %v.", cacheDir)
-	return localenv.NewLocalEnvironment(localenv.LocalEnvironmentArgs{
-		StateDir:    cacheDir,
-		Insecure:    b.Insecure,
-		Credentials: b.Credentials,
-	})
-}
-
 // checkVersion makes sure that the tele version is compatible with the selected
 // runtime version.
 func (b *Engine) checkVersion(runtimeVersion *semver.Version) error {
 	if b.SkipVersionCheck {
 		return nil
 	}
-	if err := checkVersion(runtimeVersion); err != nil {
+	if err := checkVersion(runtimeVersion, b.Logger); err != nil {
 		return trace.Wrap(err)
 	}
 	return nil
+}
+
+// collectUpgradeDependencies computes and returns a set of package dependencies for each
+// configured intermediate runtime version.
+// result contains combined dependencies marked with a label per runtime version.
+// TODO(dima): do away with package labels
+func (b *Engine) collectUpgradeDependencies() (result *libapp.Dependencies, err error) {
+	apps, err := b.Env.AppServiceLocal(localenv.AppConfig{})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	result = &libapp.Dependencies{}
+	for _, runtimeVersion := range b.intermediateRuntimeVersions {
+		app, err := apps.GetApp(loc.Runtime.WithVersion(runtimeVersion))
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		req := libapp.GetDependenciesRequest{
+			App:  *app,
+			Apps: apps,
+			Pack: b.Env.Packages,
+		}
+		dependencies, err := libapp.GetDependencies(req)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		dependencies.Apps = append(dependencies.Apps, *app)
+		//addUpgradeVersionLabel(dependencies, runtimeVersion.String())
+		result.Packages = append(result.Packages, filterUpgradePackageDependencies(dependencies.Packages)...)
+		result.Apps = append(result.Apps, dependencies.Apps...)
+	}
+	return result, nil
 }
 
 // Close cleans up build environment
@@ -409,10 +387,77 @@ func (b *Engine) Close() error {
 	return trace.NewAggregate(errors...)
 }
 
-// GetRepositoryFunc defines function that returns package source repository
-type GetRepositoryFunc func(*Engine) (string, error)
+// app returns the application value with the specified runtime version
+// set as the base
+func app(loc loc.Locator, manifest schema.Manifest) libapp.Application {
+	return libapp.Application{
+		Package:  loc,
+		Manifest: manifest,
+	}
+}
 
-// getRepository returns package source repository for the provided builder
-func getRepository(b *Engine) (string, error) {
-	return fmt.Sprintf("s3://%v", defaults.HubBucket), nil
+func runtimeApp(version semver.Version) loc.Locator {
+	return loc.Runtime.WithVersion(version)
+}
+
+// appForRuntime builds an application object with the specified runtime version
+// as the base to be able to collect dependencies of the specified base application.
+func appForRuntime(app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) libapp.Application {
+	result := libapp.Application{
+		Package:  app,
+		Manifest: manifest.WithBase(loc.Runtime.WithVersion(runtimeVersion)),
+	}
+	fmt.Printf("Runtime application for version %v: %+v\n", runtimeVersion, result)
+	return result
+}
+
+// filterUpgradePackageDependencies returns the list of package dependencies
+// to include as additional dependencies when building an installer.
+// packages lists all package dependencies for a specific intermediate version.
+// The resulting list will only include the packages the upgrade will need
+// for each intermediate hop which includes the gravity binary, teleport and planet container packages.
+// All other packages are not necessary for an intermediate upgrade hop and will be omitted.
+func filterUpgradePackageDependencies(packages []pack.PackageEnvelope) (result []pack.PackageEnvelope) {
+	result = packages[:0]
+	for _, pkg := range packages {
+		if pkg.Locator.Repository != defaults.SystemAccountOrg {
+			continue
+		}
+		switch pkg.Locator.Name {
+		case constants.TeleportPackage,
+			constants.GravityPackage,
+			constants.PlanetPackage:
+		default:
+			continue
+		}
+		result = append(result, pkg)
+	}
+	return result
+}
+
+//func addUpgradeVersionLabel(dependencies *libapp.Dependencies, version string) {
+//	for i := range dependencies.Packages {
+//		dependencies.Packages[i].RuntimeLabels = utils.CombineLabels(
+//			dependencies.Packages[i].RuntimeLabels,
+//			pack.RuntimeUpgradeLabels(version),
+//		)
+//	}
+//	for i := range dependencies.Apps {
+//		dependencies.Apps[i].PackageEnvelope.RuntimeLabels = utils.CombineLabels(
+//			dependencies.Apps[i].PackageEnvelope.RuntimeLabels,
+//			pack.RuntimeUpgradeLabels(version),
+//		)
+//	}
+//}
+
+func parseVersions(versions []string) (result []semver.Version, err error) {
+	result = make([]semver.Version, 0, len(versions))
+	for _, version := range versions {
+		runtimeVersion, err := semver.NewVersion(version)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		result = append(result, *runtimeVersion)
+	}
+	return result, nil
 }

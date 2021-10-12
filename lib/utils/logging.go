@@ -28,6 +28,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	syslogrus "github.com/sirupsen/logrus/hooks/syslog"
 	"google.golang.org/grpc/grpclog"
+	"gopkg.in/check.v1"
 )
 
 // InitLogging initializes logging to log both to syslog and to a file
@@ -125,6 +126,12 @@ func (r *Hook) Fire(entry *log.Entry) error {
 
 func (r *Hook) Levels() []log.Level {
 	return log.AllLevels
+}
+
+// NewTestLogger returns a new logger specialized for the
+// test case c is bound to
+func NewTestLogger(c *check.C) log.FieldLogger {
+	return log.WithField("test", c.TestName())
 }
 
 func defaultLogger() *log.Logger {

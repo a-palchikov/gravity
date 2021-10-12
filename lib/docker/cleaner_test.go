@@ -38,9 +38,7 @@ type CleanerSuite struct {
 }
 
 func (s *CleanerSuite) SetUpTest(c *check.C) {
-	var err error
-	s.client, err = NewClientFromEnv()
-	c.Assert(err, check.IsNil)
+	s.client = TestRequiresDocker(c)
 	s.sync = NewSynchronizer(logrus.New(), s.client, utils.DiscardProgress)
 	s.registryDir = c.MkDir()
 	s.registry = NewTestRegistry(s.registryDir, s.sync, c)

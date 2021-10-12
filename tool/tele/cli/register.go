@@ -57,6 +57,7 @@ func RegisterCommands(app *kingpin.Application) Application {
 	tele.BuildCmd.Verbose = tele.BuildCmd.Flag("verbose", "Produce more detailed build output, can be useful for troubleshooting.").Short('v').Bool()
 	tele.BuildCmd.Set = tele.BuildCmd.Flag("set", "Set Helm chart values on the command line. Can be specified multiple times and/or as comma-separated values: key1=val1,key2=val2.").Strings()
 	tele.BuildCmd.Values = tele.BuildCmd.Flag("values", "Set Helm chart values from the provided YAML file. Can be specified multiple times.").Strings()
+	tele.BuildCmd.UpgradeVia = tele.BuildCmd.Flag("upgrade-via", "Use runtime version as intermediate in upgrade. Can be specified multiple times.").Hidden().Strings()
 	tele.BuildCmd.Pull = tele.BuildCmd.Flag("pull", "Always attempt to pull newer versions of Docker images.").Bool()
 	tele.BuildCmd.BaseImage = tele.BuildCmd.Flag("with-base-image", "Specify base image to use, for example 'gravity:7.0.0'.").String()
 
