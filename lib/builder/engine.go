@@ -18,7 +18,6 @@ package builder
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -261,21 +260,6 @@ func (b *Engine) CreateApplication(data io.ReadCloser) (*libapp.Application, err
 	return b.Apps.GetImportedApplication(*op)
 }
 
-// GenerateInstaller generates an installer tarball for the specified
-// application and returns its data as a stream
-func (b *Engine) GenerateInstaller(manifest schema.Manifest, application libapp.Application) (io.ReadCloser, error) {
-	dependencies, err := b.collectUpgradeDependencies()
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	req, err := b.Generator.NewInstallerRequest(b, manifest, application)
-	if err != nil {
-		return nil, trace.Wrap(err)
-	}
-	req.AdditionalDependencies = *dependencies
-	return b.Apps.GetAppInstaller(*req)
-}
-
 // WriteInstaller writes the provided installer tarball data to disk
 func (b *Engine) WriteInstaller(data io.ReadCloser, outPath string) error {
 	f, err := os.Create(outPath)
@@ -339,9 +323,7 @@ func (b *Engine) checkVersion(runtimeVersion *semver.Version) error {
 
 // collectUpgradeDependencies computes and returns a set of package dependencies for each
 // configured intermediate runtime version.
-// result contains combined dependencies marked with a label per runtime version.
-// TODO(dima): do away with package labels
-func (b *Engine) collectUpgradeDependencies() (result *libapp.Dependencies, err error) {
+func (b *Engine) collectUpgradeDependencies(manifest *schema.Manifest) (result *libapp.Dependencies, err error) {
 	apps, err := b.Env.AppServiceLocal(localenv.AppConfig{})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -361,10 +343,17 @@ func (b *Engine) collectUpgradeDependencies() (result *libapp.Dependencies, err 
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		dependencies.Apps = append(dependencies.Apps, *app)
-		//addUpgradeVersionLabel(dependencies, runtimeVersion.String())
-		result.Packages = append(result.Packages, filterUpgradePackageDependencies(dependencies.Packages)...)
-		result.Apps = append(result.Apps, dependencies.Apps...)
+		v := schema.IntermediateVersion{
+			Version: runtimeVersion,
+			Dependencies: schema.Dependencies{
+				Packages: toSchemaPackageDependencies(dependencies.Packages),
+				Apps:     toSchemaAppDependencies(dependencies.Apps),
+			},
+		}
+		manifest.SystemOptions.Dependencies.IntermediateVersions = append(
+			manifest.SystemOptions.Dependencies.IntermediateVersions, v)
+		result.Packages = append(result.Packages, dependencies.Packages...)
+		result.Apps = append(result.Apps, append(dependencies.Apps, *app)...)
 	}
 	return result, nil
 }
@@ -400,56 +389,6 @@ func runtimeApp(version semver.Version) loc.Locator {
 	return loc.Runtime.WithVersion(version)
 }
 
-// appForRuntime builds an application object with the specified runtime version
-// as the base to be able to collect dependencies of the specified base application.
-func appForRuntime(app loc.Locator, manifest schema.Manifest, runtimeVersion semver.Version) libapp.Application {
-	result := libapp.Application{
-		Package:  app,
-		Manifest: manifest.WithBase(loc.Runtime.WithVersion(runtimeVersion)),
-	}
-	fmt.Printf("Runtime application for version %v: %+v\n", runtimeVersion, result)
-	return result
-}
-
-// filterUpgradePackageDependencies returns the list of package dependencies
-// to include as additional dependencies when building an installer.
-// packages lists all package dependencies for a specific intermediate version.
-// The resulting list will only include the packages the upgrade will need
-// for each intermediate hop which includes the gravity binary, teleport and planet container packages.
-// All other packages are not necessary for an intermediate upgrade hop and will be omitted.
-func filterUpgradePackageDependencies(packages []pack.PackageEnvelope) (result []pack.PackageEnvelope) {
-	result = packages[:0]
-	for _, pkg := range packages {
-		if pkg.Locator.Repository != defaults.SystemAccountOrg {
-			continue
-		}
-		switch pkg.Locator.Name {
-		case constants.TeleportPackage,
-			constants.GravityPackage,
-			constants.PlanetPackage:
-		default:
-			continue
-		}
-		result = append(result, pkg)
-	}
-	return result
-}
-
-//func addUpgradeVersionLabel(dependencies *libapp.Dependencies, version string) {
-//	for i := range dependencies.Packages {
-//		dependencies.Packages[i].RuntimeLabels = utils.CombineLabels(
-//			dependencies.Packages[i].RuntimeLabels,
-//			pack.RuntimeUpgradeLabels(version),
-//		)
-//	}
-//	for i := range dependencies.Apps {
-//		dependencies.Apps[i].PackageEnvelope.RuntimeLabels = utils.CombineLabels(
-//			dependencies.Apps[i].PackageEnvelope.RuntimeLabels,
-//			pack.RuntimeUpgradeLabels(version),
-//		)
-//	}
-//}
-
 func parseVersions(versions []string) (result []semver.Version, err error) {
 	result = make([]semver.Version, 0, len(versions))
 	for _, version := range versions {
@@ -460,4 +399,20 @@ func parseVersions(versions []string) (result []semver.Version, err error) {
 		result = append(result, *runtimeVersion)
 	}
 	return result, nil
+}
+
+func toSchemaPackageDependencies(packages []pack.PackageEnvelope) (result []schema.Dependency) {
+	result = make([]schema.Dependency, 0, len(packages))
+	for _, pkg := range packages {
+		result = append(result, schema.Dependency{Locator: pkg.Locator})
+	}
+	return result
+}
+
+func toSchemaAppDependencies(apps []libapp.Application) (result []schema.Dependency) {
+	result = make([]schema.Dependency, 0, len(apps))
+	for _, app := range apps {
+		result = append(result, schema.Dependency{Locator: app.Package})
+	}
+	return result
 }

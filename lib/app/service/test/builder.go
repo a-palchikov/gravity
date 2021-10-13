@@ -28,7 +28,6 @@ import (
 	"github.com/gravitational/gravity/lib/schema"
 	"github.com/gravitational/trace"
 
-	"github.com/coreos/go-semver/semver"
 	check "gopkg.in/check.v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -575,11 +574,4 @@ func overrideDependencies(deps Dependencies, pkgDeps map[loc.Locator]Package, ap
 		appDeps[app.Manifest.Locator()] = app
 		collectDependencies(app, pkgDeps, appDeps)
 	}
-}
-
-func mustSemVer(version *semver.Version, err error) semver.Version {
-	if err != nil {
-		panic(err.Error())
-	}
-	return *version
 }

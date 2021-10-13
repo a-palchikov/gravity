@@ -36,7 +36,6 @@ import (
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/gravitational/gravity/tool/common"
 
-	"github.com/coreos/go-semver/semver"
 	"github.com/gravitational/trace"
 )
 
@@ -90,15 +89,6 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 		return trace.Wrap(err)
 	}
 
-	installedRuntime := cluster.App.Manifest.Base()
-	if installedRuntime == nil {
-		return trace.BadParameter("failed to determine version of base image")
-	}
-	installedRuntimeVersion, err := installedRuntime.SemVer()
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
 	app, err := tarballEnv.Apps.GetApp(*appPackage)
 	if err != nil {
 		return trace.Wrap(err)
@@ -134,6 +124,7 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 	}
 
 	env.PrintStep("Importing application %v v%v", appPackage.Name, appPackage.Version)
+
 	puller := libapp.Puller{
 		FieldLogger: log.WithField(trace.Component, "pull"),
 		SrcPack:     tarballEnv.Packages,
@@ -148,7 +139,7 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 		AppService:  tarballEnv.Apps,
 		Progress:    env,
 	}
-	if err := uploadApplicationUpdate(ctx, puller, syncer, imageServices, *app, *installedRuntimeVersion); err != nil {
+	if err := uploadApplicationUpdate(ctx, puller, syncer, imageServices, *app); err != nil {
 		return trace.Wrap(err)
 	}
 
@@ -174,7 +165,7 @@ func uploadUpdate(ctx context.Context, tarballEnv *localenv.TarballEnvironment, 
 	return nil
 }
 
-func uploadApplicationUpdate(ctx context.Context, puller libapp.Puller, syncer libapp.Syncer, imageServices []docker.ImageService, app libapp.Application, installedRuntimeVersion semver.Version) error {
+func uploadApplicationUpdate(ctx context.Context, puller libapp.Puller, syncer libapp.Syncer, imageServices []docker.ImageService, app libapp.Application) error {
 	deps, err := libapp.GetDependencies(libapp.GetDependenciesRequest{
 		Pack: puller.SrcPack,
 		Apps: puller.SrcApp,

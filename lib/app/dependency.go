@@ -149,7 +149,7 @@ func (r GetDependenciesRequest) getDependencies(app Application, state *state) e
 		}
 		state.addPackage(*envelope)
 	}
-	logger.WithField("pkgs", packageDeps).Info("Accumulated package dependencies.")
+	logger.WithField("pkgs", packageDeps).Debug("Package dependencies.")
 	// collect application dependencies, including those of the base application
 	var appDeps []loc.Locator
 	baseApp := app.Manifest.Base()
@@ -170,7 +170,7 @@ func (r GetDependenciesRequest) getDependencies(app Application, state *state) e
 		}
 		state.addApp(*app)
 	}
-	logger.WithField("apps", appDeps).Debug("Accumulated app dependencies.")
+	logger.WithField("apps", appDeps).Debug("App dependencies.")
 	// Fetch and persist the default runtime package.
 	// If the top-level application overwrites the runtime package,
 	// only the top-level runtime package is pulled

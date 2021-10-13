@@ -97,8 +97,12 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 		return trace.Wrap(err)
 	}
 	manifestWithRuntime := manifest.WithBase(loc.Runtime.WithVersion(*runtimeVersion))
-	app := app(locator, manifestWithRuntime)
-	err = b.engine.SyncPackageCache(ctx, app)
+	err = b.engine.SyncPackageCache(ctx, app(locator, manifestWithRuntime))
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	dependencies, err := b.engine.collectUpgradeDependencies(&manifestWithRuntime)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -122,13 +126,20 @@ func (b *ClusterBuilder) Build(ctx context.Context, req ClusterRequest) error {
 	defer stream.Close()
 
 	b.engine.NextStep("Creating application")
-	application, err := b.engine.CreateApplication(stream)
+
+	app, err := b.engine.CreateApplication(stream)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
+	appReq, err := b.engine.Generator.NewInstallerRequest(b.engine, *manifest, *app)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	appReq.AdditionalDependencies = *dependencies
+
 	b.engine.NextStep("Packaging cluster image")
-	installer, err := b.engine.GenerateInstaller(*manifest, *application)
+	installer, err := b.engine.Apps.GetAppInstaller(*appReq)
 	if err != nil {
 		return trace.Wrap(err)
 	}

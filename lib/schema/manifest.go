@@ -408,9 +408,7 @@ func (m Manifest) AppDependencies() (deps []loc.Locator) {
 			deps = append(deps, v.Dependencies.GetApps()...)
 		}
 	}
-	return loc.Deduplicate(
-		append(deps, m.NodeProfiles.RuntimePackages()...),
-	)
+	return deps
 }
 
 // DefaultProvider returns the default cloud provider or an empty string.

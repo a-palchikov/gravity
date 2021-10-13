@@ -56,7 +56,6 @@ func (*OpsSuite) TestUploadsUpdate(c *check.C) {
 	// setup
 	from, to := service.NewTestServices(c.MkDir(), c), service.NewTestServices(c.MkDir(), c)
 	runtimeAppLoc, runtimeLoc := newLoc("kubernetes:2.0.0"), newLoc("planet:2.0.0")
-	runtimeAppVer := mustVer(runtimeAppLoc.Version)
 	depPackageLoc := newLoc("package:1.0.0")
 	depAppLoc, depApp2Loc := newLoc("dep-app:1.0.0"), newLoc("dep-app-2:1.0.0")
 	depApp2 := apptest.SystemApplication(depApp2Loc).Build()
@@ -126,7 +125,7 @@ func (*OpsSuite) TestUploadsUpdate(c *check.C) {
 	}
 
 	// exercise
-	err = uploadApplicationUpdate(context.TODO(), puller, syncer, []docker.ImageService{imageService}, *app, runtimeAppVer)
+	err = uploadApplicationUpdate(context.TODO(), puller, syncer, []docker.ImageService{imageService}, *app)
 
 	// verify
 	c.Assert(err, check.IsNil)

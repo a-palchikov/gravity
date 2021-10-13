@@ -97,7 +97,11 @@ func (b *ApplicationBuilder) Build(ctx context.Context, req ApplicationRequest) 
 	}
 
 	b.engine.NextStep("Packaging application image")
-	installer, err := b.engine.GenerateInstaller(*manifest, *application)
+	appReq, err := b.engine.Generator.NewInstallerRequest(b.engine, *manifest, *application)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	installer, err := b.engine.Apps.GetAppInstaller(*appReq)
 	if err != nil {
 		return trace.Wrap(err)
 	}
