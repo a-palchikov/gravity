@@ -19,6 +19,7 @@ import (
 
 	"github.com/gravitational/gravity/e/lib/builder"
 	basebuilder "github.com/gravitational/gravity/lib/builder"
+	"github.com/gravitational/gravity/lib/builder/sync"
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/localenv/credentials"
@@ -93,7 +94,7 @@ func buildClusterImage(ctx context.Context, params buildParameters) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	syncer := basebuilder.NewPackSyncer(pack, apps, repository)
+	syncer := sync.NewPack(pack, apps, repository)
 	generator, err := params.generator()
 	if err != nil {
 		return trace.Wrap(err)

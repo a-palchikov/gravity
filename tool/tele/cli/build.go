@@ -22,7 +22,9 @@ import (
 
 	"github.com/gravitational/gravity/lib/app/service"
 	"github.com/gravitational/gravity/lib/builder"
+	"github.com/gravitational/gravity/lib/builder/sync"
 	"github.com/gravitational/gravity/lib/defaults"
+	"github.com/gravitational/gravity/lib/hub"
 	"github.com/gravitational/gravity/lib/localenv"
 	"github.com/gravitational/gravity/lib/utils"
 	"github.com/sirupsen/logrus"
@@ -84,7 +86,7 @@ func (p BuildParameters) BuilderConfig(ctx context.Context) builder.Config {
 }
 
 func buildClusterImage(ctx context.Context, params BuildParameters) error {
-	syncer, err := builder.NewS3Syncer()
+	hub, err := hub.New(hub.Config{})
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -95,7 +97,7 @@ func buildClusterImage(ctx context.Context, params BuildParameters) error {
 	}
 	builderConfig := params.BuilderConfig(ctx)
 	builderConfig.Repository = getRepository()
-	builderConfig.Syncer = syncer
+	builderConfig.Syncer = sync.NewS3(hub)
 	builderConfig.Env = env
 	builderConfig.Logger = logger
 	clusterBuilder, err := builder.NewClusterBuilder(builderConfig)

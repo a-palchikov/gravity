@@ -398,9 +398,9 @@ func (r *AppsSuite) DeletesApplication(c *C) {
 func (r *AppsSuite) ResolvesManifest(c *C) {
 	apps := r.NewService(c, nil, nil)
 	runtimeAppLoc := loc.MustParseLocator("gravitational.io/app-template:0.0.1")
-	dependencies := schema.Dependencies{Packages: []schema.Dependency{apptest.NewDependency("gravitational.io/package:0.0.1")}}
+	dependencies := schema.Dependencies{Packages: []schema.Dependency{apptest.NewDependency("gravitational.io/package:1.0.0")}}
 	runtimeApp := apptest.RuntimeApplication(runtimeAppLoc, apptest.RuntimePackageLoc).
-		WithSchemaDependencies(dependencies).
+		WithSchemaPackageDependencies(dependencies.Packages[0].Locator).
 		Build()
 	mainAppLoc := loc.MustParseLocator("gravitational.io/sample:0.0.1")
 	mainApp := apptest.ClusterApplication(mainAppLoc, runtimeApp).Build()

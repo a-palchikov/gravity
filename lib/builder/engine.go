@@ -179,7 +179,14 @@ func (b *Engine) SyncPackageCache(ctx context.Context, app libapp.Application) e
 	}
 	b.Logger.Infof("Synchronizing package cache with %v.", b.Repository)
 	b.NextStep("Downloading dependencies from %v", b.Repository)
-	return b.Syncer.Sync(ctx, b, app, apps, b.intermediateRuntimeVersions)
+	cache := Cache{
+		Apps:     b.Env.Apps,
+		Pack:     b.Env.Packages,
+		Progress: b.Progress,
+		Parallel: b.Parallel,
+		Logger:   b.Logger,
+	}
+	return b.Syncer.Sync(ctx, cache, app, apps, b.intermediateRuntimeVersions)
 }
 
 // VendorRequest combines vendoring parameters.
@@ -383,10 +390,6 @@ func app(loc loc.Locator, manifest schema.Manifest) libapp.Application {
 		Package:  loc,
 		Manifest: manifest,
 	}
-}
-
-func runtimeApp(version semver.Version) loc.Locator {
-	return loc.Runtime.WithVersion(version)
 }
 
 func parseVersions(versions []string) (result []semver.Version, err error) {

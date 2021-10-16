@@ -82,57 +82,49 @@ type Package struct {
 // WithDependencies defines the application package/application dependencies.
 // Dependencies will be also automatically reflected in the manifest.
 func (r *App) WithDependencies(deps Dependencies) *App {
-	var schemaDeps schema.Dependencies
-	for _, pkg := range deps.Packages {
-		schemaDeps.Packages = append(schemaDeps.Packages, schema.Dependency{Locator: pkg.Loc})
-	}
-	for _, app := range deps.Apps {
-		schemaDeps.Apps = append(schemaDeps.Apps, schema.Dependency{Locator: app.Manifest.Locator()})
-	}
 	r.Dependencies = deps
-	r.Manifest.Dependencies = schemaDeps
 	return r
 }
 
 // WithSchemaDependencies defines the application package/application dependencies.
 // These dependencies will only be reflected in the manifest.
 func (r *App) WithSchemaDependencies(deps schema.Dependencies) *App {
-	r.Manifest.Dependencies = deps
+	r.withSchemaPackageDependencies(deps.Packages)
+	r.withSchemaAppDependencies(deps.Apps)
 	return r
 }
 
-// WithSchemaPackageDependencies defines the application package dependencies.
-// These dependencies will only be reflected in the manifest.
+// WithSchemaPackageDependencies defines the package dependencies.
 func (r *App) WithSchemaPackageDependencies(deps ...loc.Locator) *App {
-	schemaPackages := make([]schema.Dependency, 0, len(deps))
+	packages := make([]Package, 0, len(deps))
 	for _, pkg := range deps {
-		schemaPackages = append(schemaPackages, schema.Dependency{Locator: pkg})
+		packages = append(packages, Package{Loc: pkg})
 	}
-	r.Manifest.Dependencies.Packages = schemaPackages
+	r.Dependencies.Packages = packages
+	return r
+}
+
+// WithSchemaAppDependencies defines the application dependencies.
+func (r *App) WithSchemaAppDependencies(deps ...loc.Locator) *App {
+	apps := make([]App, 0, len(deps))
+	for _, app := range deps {
+		apps = append(apps, SystemApplication(app).Build())
+	}
+	r.Dependencies.Apps = apps
 	return r
 }
 
 // WithAppDependencies defines the application dependencies.
 // Dependencies will be also automatically reflected in the manifest.
 func (r *App) WithAppDependencies(deps ...App) *App {
-	schemaApps := make([]schema.Dependency, 0, len(deps))
-	for _, app := range deps {
-		schemaApps = append(schemaApps, schema.Dependency{Locator: app.Manifest.Locator()})
-	}
 	r.Dependencies.Apps = deps
-	r.Manifest.Dependencies.Apps = schemaApps
 	return r
 }
 
 // WithPackageDependencies defines the application package dependencies.
 // Dependencies will be also automatically reflected in the manifest.
 func (r *App) WithPackageDependencies(deps ...Package) *App {
-	schemaPackages := make([]schema.Dependency, 0, len(deps))
-	for _, pkg := range deps {
-		schemaPackages = append(schemaPackages, schema.Dependency{Locator: pkg.Loc})
-	}
 	r.Dependencies.Packages = deps
-	r.Manifest.Dependencies.Packages = schemaPackages
 	return r
 }
 
@@ -155,7 +147,23 @@ func (r App) Locator() loc.Locator {
 //	App: ClusterApplication(...).WithItems(...).WithDependencies(...).Build(),
 //	Apps: ...,
 // })
-func (r App) Build() App { return r }
+func (r App) Build() App {
+	if len(r.Dependencies.Packages) != 0 {
+		schemaPackages := make([]schema.Dependency, 0, len(r.Dependencies.Packages))
+		for _, pkg := range r.Dependencies.Packages {
+			schemaPackages = append(schemaPackages, schema.Dependency{Locator: pkg.Loc})
+		}
+		r.Manifest.Dependencies.Packages = schemaPackages
+	}
+	if len(r.Dependencies.Apps) != 0 {
+		schemaApps := make([]schema.Dependency, 0, len(r.Dependencies.Apps))
+		for _, app := range r.Dependencies.Apps {
+			schemaApps = append(schemaApps, schema.Dependency{Locator: app.Locator()})
+		}
+		r.Manifest.Dependencies.Apps = schemaApps
+	}
+	return r
+}
 
 // App describes a test application package
 type App struct {
@@ -541,6 +549,22 @@ func (r AppRequest) appServices() []app.Applications {
 		appServices = append(appServices, r.Apps)
 	}
 	return appServices
+}
+
+func (r *App) withSchemaPackageDependencies(deps []schema.Dependency) {
+	packages := make([]Package, 0, len(deps))
+	for _, pkg := range deps {
+		packages = append(packages, Package{Loc: pkg.Locator})
+	}
+	r.Dependencies.Packages = packages
+}
+
+func (r *App) withSchemaAppDependencies(deps []schema.Dependency) {
+	apps := make([]App, 0, len(deps))
+	for _, app := range deps {
+		apps = append(apps, SystemApplication(app.Locator).Build())
+	}
+	r.Dependencies.Apps = apps
 }
 
 func collectDependencies(app App, pkgDeps map[loc.Locator]Package, appDeps map[loc.Locator]App) {

@@ -32,6 +32,7 @@ import (
 	"github.com/gravitational/gravity/lib/constants"
 	"github.com/gravitational/gravity/lib/defaults"
 	"github.com/gravitational/gravity/lib/loc"
+	loctest "github.com/gravitational/gravity/lib/loc/test"
 	"github.com/gravitational/gravity/lib/ops"
 	"github.com/gravitational/gravity/lib/pack"
 	"github.com/gravitational/gravity/lib/schema"
@@ -43,6 +44,8 @@ import (
 	. "gopkg.in/check.v1" //nolint:revive,stylecheck // TODO(dima): tests will be rewritten to use testify
 )
 
+var newLoc = loctest.NewWithSystemRepository
+
 type OpsSuite struct {
 	O       ops.Operator
 	U       users.Users
@@ -53,21 +56,19 @@ type OpsSuite struct {
 func SetUpTestPackage(c *C, apps app.Applications, packages pack.PackageService) loc.Locator {
 	clusterApp, _ := apptest.CreateApplication(apptest.AppRequest{
 		App: apptest.DefaultClusterApplication(loc.MustParseLocator("gravitational.io/app:0.0.1")).
-			WithSchemaDependencies(schema.Dependencies{
-				Packages: []schema.Dependency{
-					apptest.NewDependency("gravitational.io/gravity:0.0.1"),
-					apptest.NewDependency("gravitational.io/web-assets:0.0.1"),
-					apptest.NewDependency("gravitational.io/teleport:0.0.4"),
-					apptest.NewDependency("gravitational.io/planet:0.0.1"),
-				},
-				Apps: []schema.Dependency{
-					apptest.NewDependency("gravitational.io/rbac-app:0.0.1"),
-					apptest.NewDependency("gravitational.io/dns-app:0.0.1"),
-					apptest.NewDependency("gravitational.io/logging-app:0.0.1"),
-					apptest.NewDependency("gravitational.io/monitoring-app:0.0.1"),
-					apptest.NewDependency("gravitational.io/site:0.0.1"),
-				},
-			}).Build(),
+			WithSchemaPackageDependencies(
+				newLoc("gravity:0.0.1"),
+				newLoc("web-assets:0.0.1"),
+				newLoc("teleport:0.0.4"),
+				newLoc("planet:0.0.1"),
+			).
+			WithSchemaAppDependencies(
+				newLoc("rbac-app:0.0.1"),
+				newLoc("dns-app:0.0.1"),
+				newLoc("logging-app:0.0.1"),
+				newLoc("monitoring-app:0.0.1"),
+				newLoc("site:0.0.1"),
+			).Build(),
 		Packages: packages,
 		Apps:     apps,
 	}, c)
